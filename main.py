@@ -1,206 +1,147 @@
-# %%
+import pdb
 import numpy as np
 import pandas as pd
 import pathlib
 import time
 import matplotlib.pyplot as plt
-from tqdm import trange
+from datetime import datetime
 
-from preprocess import CV_splitter, binary_categorize, feature_engineer
+import torch
+from torch import nn
+from pytorch_lightning import seed_everything
+from torch.utils.data import TensorDataset, DataLoader
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks import ModelCheckpoint
+from torch.nn import functional as F
+import torchmetrics
 
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import GridSearchCV
-from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
-# %% 
-# set pathmain.py
-path = pathlib.Path(r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature")
+from argparse import ArgumentParser
 
-# read dataset
-data = pd.read_parquet(path/"final_df_filledmean_small.parquet")
+from datamodule import MyDataModule
+from model.neuralnetwork import FFN
 
-# %%
-# engineer option characteristics variables
-data = feature_engineer(data)
+def log_foldername(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''):
+    name = tag
+    for k, v in to_add.items():
+        if k not in to_exclude:
+            name += k
+            name += "_"
+            name += str(v)
+            name += "."
+    for k, v in model.hparams.items():
+        if k not in to_exclude:
+            name += k
+            name += "_"
+            name += str(v)
+            name += "."
+    for k, v in dm.hparams.items():
+        if k not in to_exclude:
+            name += k
+            name += "_"
+            name += str(v)
+            name += "."
+    return name
 
-# %%
-# create X and y datasets
-y = data["option_ret"]
-# drop it for X
-X = data.drop(["option_ret"], axis=1)
+def train(args):
 
-# %%
-# apply label function to option returns
-y = y.apply(binary_categorize)
+    # Set path
+    path_data = pathlib.Path(r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature")
+    
+    dm = MyDataModule(
+        path=path_data,
+        dataset=args.dataset,
+        batch_size=args.batch_size,
+        start_val=args.start_val,
+        start_test=args.start_test,
+        label_fn=args.label_fn
+    )
+    dm.setup()
+    print("dm is set up!")
+    model = FFN(
+        # args,
+        dm=dm,
+        no_weighting=args.no_weighting,
+        hidden_dim=args.hidden_dim,
+        learning_rate=args.learning_rate,
+    )
+    print("Model is loaded!")
 
-# %%
+    # specify which parameters will be added/ removed from logging folder name
+    to_add = {"max_epochs": args.max_epochs}
+    to_exclude = ["path", "dm"]
 
-# define start years for validation and test periods
-# start_train = 1996 (fixed)
-start_val = "2014"
-start_test = "2016"
+    # Set logging directory
+    log_dir = "logs"
+    name = log_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
+    version = datetime.now().strftime("%Y%m%d%H%M%S")
 
-# extract and save dates column -> needed to sort into train, val, test
-dates = X["date"]
-X = X.drop(["date"], axis=1)
+    logger = pl.loggers.TensorBoardLogger(
+        save_dir=log_dir,
+        name=name,
+        version=version,
+    )
 
-# Create train, val, test sets & convert to numpy
-# Train
-train_dates = dates < start_val
-X_train = X[train_dates].values
-y_train = y[:len(X_train)].values
+    early_stop_callback = EarlyStopping(
+        monitor="loss/val_loss", 
+        mode="min", 
+        patience=args.patience
+    )
 
-# Val
-mask = (dates >= start_val) & (dates < start_test)
-X_val = X[mask].values
-y_val = y[len(X_train):len(X_train)+len(X_val)].values
+    checkpoint_callback = ModelCheckpoint(
+        monitor="loss/val_loss",
+        save_top_k=1,
+        mode="min",
+        filename='epoch={epoch}-val_loss={loss/val_loss:.2f}-\
+            val_bacc={bal_accuracy/val:.2f}',
+        auto_insert_metric_name=False,
+    )
 
-# Test
-X_test = X[dates >= start_test].values
-y_test = y[-len(X_test):].values
-# %%
-# Find end of year dates
-
-# eoy_array = np.where((data["date"].dt.year.diff() == 1))[0] - 1
-
-# # %%
-# eoy_array
-
-# %%
-
-# %%
-
-
-# %%
-# Create CV splitter and convert X_train to numpy
-cv_split = CV_splitter(dates[train_dates], init_train_length=5, val_length=2)
-
-a = cv_split.generate()
-
-for train, test in a:
-    print("train start: %s train end: %s :: test start: %s, test end: %s" 
-    % (dates[train[0]].strftime("%Y-%m-%d"), dates[train[-1]].strftime("%Y-%m-%d"), dates[test[0]].strftime("%Y-%m-%d"), dates[test[-1]].strftime("%Y-%m-%d"))) 
-# %%
-# data.iloc[398023  :539801, :]
-
-
-# %%
-scaler = StandardScaler()
-
-# clf = LogisticRegression(random_state=0, 
-#                          class_weight="balanced",
-#                         #  solver="saga",
-#                         #    max_iter=1000,
-#                         #  n_jobs=-1, #slower if activated
-#                         #  C=1e-12,
-#                         # l1_ratio=0.5,
-#                         )
-
-# clf = RandomForestClassifier(random_state=0,
-#                     class_weight="balanced",
-#                     # max_depth=2,
-#                     n_jobs=-1,
-#                 )
-
-clf = HistGradientBoostingClassifier(random_state=0,
-                                 max_iter=100000, 
-                                 max_depth=2,
-#                                  learning_rate=1.0,
-                                validation_fraction=None,
-                                #  verbose=1,
-                                )
-
-# clf = LinearSVC(random_state=0,
-#                class_weight="balanced",
-#                )
-
-# clf = SVC(random_state=0,
-#          class_weight="balanced",
-#          )
+    trainer = pl.Trainer(
+        # args=args,
+        max_epochs=args.max_epochs,
+        gpus=1,
+        logger=logger,
+        check_val_every_n_epoch=args.check_val_every,
+        callbacks=[early_stop_callback, checkpoint_callback],
+        num_sanity_val_steps=2,
+    )
+    print("Fitting the model...")
+    trainer.fit(model=model, datamodule=dm)
 
 
-clf = Pipeline([
-    # ('scaler', scaler),
-    ('clf', clf)
-])
+if __name__ == "__main__":
+    seed_everything(42, workers=True)
+    
+    parser = ArgumentParser(description="Master Thesis Mathias Ruoss - Option\
+        Return Classification")
+    # Logger
+    logging = parser.add_argument_group("Logging Configuration")
+    logging.add_argument("--tag", type=str, default='')
+    # EarlyStopping
+    earlystop = parser.add_argument_group("Early Stopping Configuration")
+    # earlystop.add_argument("--monitor", type=str, default="loss/val_loss")
+    # earlystop.add_argument("--es_mode", type=str, default="min")
+    earlystop.add_argument("--patience", type=int, default=3)
+    # ModelCheckpoint
+    # modelcheck = parser.add_argument_group("Model Checkpoint Configuration")
+    # modelcheck.add_argument("--monitor", type=str, default="loss/val_loss")
+    # modelcheck.add_argument("--save_top_k", type=int, default=1)
+    # modelcheck.add_argument("--check_mode", type=str, default="min")
 
-# %%
-param_grid = {
-        #   "clf__C":  np.logspace(-5, 5, 5),
-      "clf__max_depth": [1, 2, 3, 4, 5],
-}
-clf = GridSearchCV(
-    clf, 
-    param_grid,
-    scoring=["accuracy", "balanced_accuracy"],
-    refit="balanced_accuracy",
-    n_jobs=-1,
-    cv=cv_split.generate(),
-    verbose=3,
-)
+    # dm
+    datamodule = parser.add_argument_group("Data Module Configuration")
+    datamodule = MyDataModule.add_model_specific_args(datamodule)  #add additional arguments directly in class method
+    # model
+    model = parser.add_argument_group("Model Configuration")
+    model = FFN.add_model_specific_args(model) #add additional arguments directly in class 
+    # trainer
+    trainer = parser.add_argument_group("Trainer Configuration")
+    trainer.add_argument("--max_epochs", type=int, default=20)
+    trainer.add_argument("--check_val_every", type=int, default=1)
+    # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
+    args = parser.parse_args([])
 
-# %%
-############################### FIT ################################################
-s_time = time.time()
-clf.fit(X_train, y_train,
-#        clf__sample_weight=sample_weight
-       )
-e_time = time.time()
-print(f"Time to fit: {divmod(e_time - s_time, 60)[0]:.0f}:{divmod(e_time - s_time, 60)[1]:.0f}\
- min")
-
-###################################################################################
-# %%
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import balanced_accuracy_score
-
-### 
-
-print("y_val mean: ", np.mean(y_val))
-
-### TRIVIAL
-y_trivial = np.zeros_like(y_val)
-print("trivial accuracy: ", accuracy_score(y_val, y_trivial))
-print("trivial balanced accuracy: ", balanced_accuracy_score(y_val, y_trivial))
-
-# %%
-### CLASSIFIER
-y_pred = clf.predict(X_val)
-
-print("classfier accuracy: ", accuracy_score(y_val, y_pred))
-print("classifier balanced accuracy: ", balanced_accuracy_score(y_val, y_pred))
-print("prediction counts:", pd.value_counts(y_pred), sep="\n")
-print("mean prediction: ", np.mean(y_pred))
-
-
-
-#%%
-#### DUMMY
-from sklearn.dummy import DummyClassifier
-dummy_clf = DummyClassifier(strategy="most_frequent")
-dummy_clf.fit(X_train, y_train)
-y_dummy = dummy_clf.predict(X_val)
-
-
-print("dummy accuracy: ", accuracy_score(y_val, y_dummy))
-print("dummy balanced accuracy: ", balanced_accuracy_score(y_val, y_dummy))
-
-# %%
-# classfier accuracy:  0.5644384579255092
-# classifier balanced accuracy:  0.5230255282223188
-# prediction counts:
-# 0    247167
-# 1    123295
-# dtype: int64
-# mean prediction:  0.3328141617763765
-# %%
-clf.cv_results_
-
-# %%
-
-clf.best_params_
-# %% To open tensorboard: paste below line in cmd
-# tensorboard --logdir=logs --port=6007   
+    train(args)

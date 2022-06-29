@@ -1,6 +1,5 @@
-# FEATURE ENGINEERING
+import numpy as np
 
-# import pandas as pd
 
 def feature_engineer(data):
     """
@@ -65,8 +64,9 @@ def multi_categorize(y):
     else:
         return 0
 
+
 # create gridsearch timeseries splits
-class CV_splitter:
+class CVSplitter:
     """ Generator for sklearn gridsearch cv
     Args:
     dates: pandas.Series of datetime,
@@ -94,3 +94,4 @@ class CV_splitter:
             yield (list(range(self.train_indeces[i] + 1)), 
                    list(range(self.train_indeces[i]+1, self.val_indeces[i]+1)))
 
+    
