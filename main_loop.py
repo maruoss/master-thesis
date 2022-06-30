@@ -1,5 +1,5 @@
 import pdb
-
+from re import I
 import numpy as np
 import pandas as pd
 import pathlib
@@ -20,19 +20,22 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from argparse import ArgumentParser
 
-from datamodule import MyDataModule
+from datamodule_loop import MyDataModule
 from model.neuralnetwork import FFN
 from utils.logger import log_foldername
 
 
-def train(args):
+def train(args, year_idx, time):
     
     dm = MyDataModule(
         path=path_data,
+        year_idx=year_idx,
         dataset=args.dataset,
         batch_size=args.batch_size,
-        start_val=args.start_val,
-        start_test=args.start_test,
+        init_train_length=args.init_train_length,
+        val_length=args.val_length,
+        # start_val=args.start_val,
+        # start_test=args.start_test,
         label_fn=args.label_fn
     )
     dm.setup() #needed for model parameters
@@ -54,9 +57,10 @@ def train(args):
     # to_exclude = ["path", "dm"] -> moved to parameter "ignore" of save_hyperparameters
 
     # Set logging directory
-    log_dir = "logs"
+    log_dir = "logs/loops"
     name = log_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
-    version = datetime.now().strftime("%Y%m%d%H%M%S")
+    name = name+"/"+time
+    version = f"year_idx{year_idx}"
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir=log_dir,
@@ -90,6 +94,13 @@ def train(args):
     print("Fitting the model...")
     trainer.fit(model=model, datamodule=dm)
 
+def trainer(args):
+    # Loop over all train, val splits: 1996 - 2021 = 26 years in total
+    # For folder name
+    time = datetime.now().strftime("%Y%m%d%H%M%S")
+    for year_idx in range(26 - (args.init_train_length + args.val_length) + 1):
+        train(args, year_idx, time)
+
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)
@@ -107,8 +118,8 @@ if __name__ == "__main__":
 
     # EarlyStopping
     group = parser.add_argument_group("Early Stopping Configuration")
-    # group.add_argument("--monitor", type=str, default="loss/val_loss")
-    # group.add_argument("--es_mode", type=str, default="min")
+    # earlystop.add_argument("--monitor", type=str, default="loss/val_loss")
+    # earlystop.add_argument("--es_mode", type=str, default="min")
     group.add_argument("--patience", type=int, default=3)
 
     # ModelCheckpoint
@@ -126,11 +137,17 @@ if __name__ == "__main__":
     group = FFN.add_model_specific_args(group) #add additional arguments directly in class
 
     # trainer
-    group = parser.add_argument_group("Trainer Configuration")
-    group.add_argument("--max_epochs", type=int, default=20)
+    group = parser.add_argument_group("Training Configuration")
+    group.add_argument("--max_epochs", type=int, default=1)
     group.add_argument("--check_val_every", type=int, default=1)
     # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
-    args = parser.parse_args() # use [] to not print anything
+    # loop
+    group = parser.add_argument_group("Loop Configuration")
+    group.add_argument("--init_train_length", type=int, default=10)
+    group.add_argument("--val_length", type=int, default=2)
+    group.add_argument("--test_length", type=int, default=1)
 
-    train(args)
+    args = parser.parse_args()
+
+    trainer(args)
