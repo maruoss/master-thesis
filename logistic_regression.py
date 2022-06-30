@@ -6,7 +6,7 @@ import time
 import matplotlib.pyplot as plt
 from tqdm import trange
 
-from preprocess import CVSplitter, binary_categorize, feature_engineer
+from utils.preprocess import CVSplitter, binary_categorize, feature_engineer
 
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
@@ -16,7 +16,7 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 
 # %% 
 # set pathmain.py
-path = pathlib.Path(r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature")
+path = pathlib.Path(r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data")
 
 # read dataset
 data = pd.read_parquet(path/"final_df_filledmean_small.parquet")
@@ -81,9 +81,22 @@ a = cv_split.generate()
 
 for train, test in a:
     print("train start: %s train end: %s :: test start: %s, test end: %s" 
-    % (dates[train[0]].strftime("%Y-%m-%d"), dates[train[-1]].strftime("%Y-%m-%d"), dates[test[0]].strftime("%Y-%m-%d"), dates[test[-1]].strftime("%Y-%m-%d"))) 
+    % (dates[train[0]].strftime("%Y-%m-%d"), dates[train[-1]].strftime("%Y-%m-%d"), 
+    dates[test[0]].strftime("%Y-%m-%d"), dates[test[-1]].strftime("%Y-%m-%d"))) 
+
 # %%
-# data.iloc[398023  :539801, :]
+
+cv_split.train_eoy
+# %%
+
+output = cv_split.generate_idx()
+# %%
+for i in output:
+    print(i)
+
+#%%
+
+output
 
 
 # %%

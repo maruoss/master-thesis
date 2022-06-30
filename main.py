@@ -21,33 +21,10 @@ from argparse import ArgumentParser
 
 from datamodule import MyDataModule
 from model.neuralnetwork import FFN
+from utils.logger import log_foldername
 
-def log_foldername(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''):
-    name = tag
-    for k, v in to_add.items():
-        if k not in to_exclude:
-            name += k
-            name += "_"
-            name += str(v)
-            name += "."
-    for k, v in model.hparams.items():
-        if k not in to_exclude:
-            name += k
-            name += "_"
-            name += str(v)
-            name += "."
-    for k, v in dm.hparams.items():
-        if k not in to_exclude:
-            name += k
-            name += "_"
-            name += str(v)
-            name += "."
-    return name
 
 def train(args):
-
-    # Set path
-    path_data = pathlib.Path(r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature")
     
     dm = MyDataModule(
         path=path_data,
@@ -57,12 +34,14 @@ def train(args):
         start_test=args.start_test,
         label_fn=args.label_fn
     )
-    dm.setup()
+    dm.setup() #needed for model parameters
     print("dm is set up!")
     model = FFN(
-        # args,
-        dm=dm,
-        no_weighting=args.no_weighting,
+        # dm=dm,
+        input_dim=dm.input_dim,
+        num_classes=dm.num_classes,
+        class_weights=dm.class_weights,
+        no_class_weights=args.no_class_weights,
         hidden_dim=args.hidden_dim,
         learning_rate=args.learning_rate,
     )
@@ -70,7 +49,8 @@ def train(args):
 
     # specify which parameters will be added/ removed from logging folder name
     to_add = {"max_epochs": args.max_epochs}
-    to_exclude = ["path", "dm"]
+    to_exclude = []
+    # to_exclude = ["path", "dm"] -> moved to parameter "ignore" of save_hyperparameters
 
     # Set logging directory
     log_dir = "logs"
@@ -93,14 +73,14 @@ def train(args):
         monitor="loss/val_loss",
         save_top_k=1,
         mode="min",
-        filename='epoch={epoch}-val_loss={loss/val_loss:.2f}-\
-            val_bacc={bal_accuracy/val:.2f}',
+        filename='epoch={epoch}-val_loss={loss/val_loss:.3f}-\
+            val_bacc={bal_accuracy/val:.4f}',
         auto_insert_metric_name=False,
     )
 
     trainer = pl.Trainer(
-        # args=args,
         max_epochs=args.max_epochs,
+        deterministic=True,
         gpus=1,
         logger=logger,
         check_val_every_n_epoch=args.check_val_every,
@@ -113,17 +93,24 @@ def train(args):
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)
+
+    # Set path
+    path_data = pathlib.Path(
+        r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data"
+    )
     
     parser = ArgumentParser(description="Master Thesis Mathias Ruoss - Option\
         Return Classification")
     # Logger
     logging = parser.add_argument_group("Logging Configuration")
     logging.add_argument("--tag", type=str, default='')
+
     # EarlyStopping
     earlystop = parser.add_argument_group("Early Stopping Configuration")
     # earlystop.add_argument("--monitor", type=str, default="loss/val_loss")
     # earlystop.add_argument("--es_mode", type=str, default="min")
     earlystop.add_argument("--patience", type=int, default=3)
+
     # ModelCheckpoint
     # modelcheck = parser.add_argument_group("Model Checkpoint Configuration")
     # modelcheck.add_argument("--monitor", type=str, default="loss/val_loss")
@@ -133,9 +120,11 @@ if __name__ == "__main__":
     # dm
     datamodule = parser.add_argument_group("Data Module Configuration")
     datamodule = MyDataModule.add_model_specific_args(datamodule)  #add additional arguments directly in class method
+
     # model
     model = parser.add_argument_group("Model Configuration")
-    model = FFN.add_model_specific_args(model) #add additional arguments directly in class 
+    model = FFN.add_model_specific_args(model) #add additional arguments directly in class
+
     # trainer
     trainer = parser.add_argument_group("Trainer Configuration")
     trainer.add_argument("--max_epochs", type=int, default=20)

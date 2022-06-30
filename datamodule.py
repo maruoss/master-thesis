@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from preprocess import binary_categorize, feature_engineer, multi_categorize
+from utils.preprocess import binary_categorize, feature_engineer, multi_categorize
 from torch.utils.data import TensorDataset, DataLoader
 import pytorch_lightning as pl
 
@@ -18,8 +18,7 @@ class MyDataModule(pl.LightningDataModule):
                  label_fn: str,
         ):
         super().__init__()
-        self.save_hyperparameters()
-
+        self.save_hyperparameters(ignore=["path"])
         self.batch_size = batch_size
         
         # read data from disk
@@ -78,7 +77,19 @@ class MyDataModule(pl.LightningDataModule):
         self.X_train = (self.X_train - mean) / std
         self.X_val = (self.X_val - mean) / std
         self.X_test = (self.X_test - mean) / std
-        
+
+        # Save variables to pass to model class
+        # input dim
+        self.input_dim = self.X_train.shape[1]
+        # number of classes
+        self.num_classes = len(self.y_train.unique())
+        # class weights
+        train_idx = self.dates < self.hparams.start_val
+        self.class_weights = len(self.y[train_idx]) / self.y[train_idx].unique(return_counts=True)[1]
+
+        print("class_weights:", self.class_weights)
+        print("device of class_weights:", self.class_weights.device)
+        print("---")
         print(f"# of input data: {len(self.data)} with shape: {self.data.shape}")
         print(f"# of training samples: {len(self.y_train)} with X_train of shape: {self.X_train.shape}")
         print(f"# of validation samples: {len(self.y_val)} with X_val of shape: {self.X_val.shape}")
@@ -89,6 +100,7 @@ class MyDataModule(pl.LightningDataModule):
               ", val end date: ", self.dates[mask].iloc[-1].strftime("%Y-%m-%d"))
         print(f"test start date: ", self.dates[self.dates >= self.hparams.start_test].iloc[0].strftime("%Y-%m-%d"), 
               ", test end date: ", self.dates[self.dates >= self.hparams.start_test].iloc[-1].strftime("%Y-%m-%d"))
+        print("---")
 
     def example(self):
         """Returns a random training example."""        

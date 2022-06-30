@@ -67,7 +67,7 @@ def multi_categorize(y):
 
 # create gridsearch timeseries splits
 class CVSplitter:
-    """ Generator for sklearn gridsearch cv
+    """ Generator for data splits
     Args:
     dates: pandas.Series of datetime,
     init_train_length: int,
@@ -76,22 +76,25 @@ class CVSplitter:
     def __init__(self, dates, init_train_length=5, val_length=2):
         # find indeces where years change (will ignore last year end in dates)
         self.val_length = val_length
-        self.eoy_idx =  np.where((dates.dt.year.diff() == 1))[0] - 1
-        self.eoy_idx = np.append(self.eoy_idx, len(dates) - 1) #append end of year of last year in dates
+        self.eoy_idx =  np.where((dates.dt.year.diff() == 1))[0]
+        self.eoy_idx = np.append(self.eoy_idx, len(dates)) #append end of year of last year in dates
 
         assert init_train_length + val_length <= len(self.eoy_idx) + 1, "defined train and val are larger "\
             "than number of years in dataset"
         assert init_train_length > 0, "init_train_length must be strictly greater than 0"
 
-        # align
+        # align, the 4th idx is the end of the 5th year...
         self.train_start_idx = init_train_length - 1
 
-        self.train_indeces = self.eoy_idx[self.train_start_idx:]
-        self.val_indeces = self.eoy_idx[self.train_start_idx + val_length:]
+        self.train_eoy = self.eoy_idx[self.train_start_idx:-self.val_length]
+        self.val_eoy = self.eoy_idx[self.train_start_idx + val_length:]
 
     def generate(self):
         for i in range(len(self.eoy_idx) - (self.train_start_idx + self.val_length)):
-            yield (list(range(self.train_indeces[i] + 1)), 
-                   list(range(self.train_indeces[i]+1, self.val_indeces[i]+1)))
+            yield (list(range(self.train_eoy[i])), 
+                   list(range(self.train_eoy[i], self.val_eoy[i])))
 
+    def generate_idx(self):
+        for i in range(len(self.eoy_idx) - (self.train_start_idx + self.val_length)):
+            yield (self.train_eoy[i], self.val_eoy[i])
     
