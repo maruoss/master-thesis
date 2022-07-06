@@ -5,12 +5,12 @@ import torch
 from utils.preprocess import CVSplitter, binary_categorize, feature_engineer, multi_categorize
 from torch.utils.data import TensorDataset, DataLoader
 import pytorch_lightning as pl
-
+import pathlib
 import pdb
 
-class MyDataModule(pl.LightningDataModule):
+class MyDataModule_Loop(pl.LightningDataModule):
     def __init__(self,
-                 path,
+                 path: str, # will be converted to Path in __init__
                  year_idx: int,
                  dataset: str,
                  batch_size: int,
@@ -19,12 +19,19 @@ class MyDataModule(pl.LightningDataModule):
                 #  start_val: str, 
                 #  start_test: str,
                  label_fn: str,
+                 config: dict = None,
         ):
         super().__init__()
-        self.save_hyperparameters(ignore=["path", "year_idx"])
-        self.batch_size = batch_size
+        self.save_hyperparameters(ignore=["path"])
+        
+        # tune or train?
+        if config is not None:
+            self.batch_size = config["batch_size"]
+        else:
+            self.batch_size = batch_size
         
         # read data from disk
+        path = pathlib.Path(path)
         if dataset == "small":
             self.data = pd.read_parquet(path/"final_df_filledmean_small.parquet")
         elif dataset == "big":
@@ -103,7 +110,6 @@ class MyDataModule(pl.LightningDataModule):
         # number of classes
         self.num_classes = len(self.y_train.unique())
         # class weights
-        # pdb.set_trace()
         self.class_weights = len(self.y_train) / self.y_train.unique(return_counts=True)[1]
 
         print("class_weights:", self.class_weights)

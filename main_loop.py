@@ -20,134 +20,80 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from argparse import ArgumentParser
 
-from datamodule_loop import MyDataModule
+from datamodule_loop import MyDataModule_Loop
 from model.neuralnetwork import FFN
-from utils.logger import log_foldername
+from utils.arguments import load_args
+from trainers.train_NN import nn_loop, nn_tune
+from utils.logger import create_foldername
 
 
 def train(args, year_idx, time):
-    
-    dm = MyDataModule(
-        path=path_data,
-        year_idx=year_idx,
-        dataset=args.dataset,
-        batch_size=args.batch_size,
-        init_train_length=args.init_train_length,
-        val_length=args.val_length,
-        # start_val=args.start_val,
-        # start_test=args.start_test,
-        label_fn=args.label_fn
-    )
-    dm.setup() #needed for model parameters
-    print("dm is set up!")
-    model = FFN(
-        # dm=dm,
-        input_dim=dm.input_dim,
-        num_classes=dm.num_classes,
-        class_weights=dm.class_weights,
-        no_class_weights=args.no_class_weights,
-        hidden_dim=args.hidden_dim,
-        learning_rate=args.learning_rate,
-    )
-    print("Model is loaded!")
+    """single loop with fixed hyperparameters"""
+    if args.model == "nn":
+        nn_loop(args, year_idx, time)
+    else:
+        raise ValueError("specify an implemented model")
 
-    # specify which parameters will be added/ removed from logging folder name
-    to_add = {"max_epochs": args.max_epochs}
-    to_exclude = []
-    # to_exclude = ["path", "dm"] -> moved to parameter "ignore" of save_hyperparameters
+def tune(args, year_idx, time):
+    """hyperparameter search over a single loop"""
+    if args.model == "nn":
+        nn_tune(args, year_idx, time)
+    else:
+        raise ValueError("specify an implemented model")
 
-    # Set logging directory
-    log_dir = "logs/loops"
-    name = log_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
-    name = name+"/"+time
-    version = f"year_idx{year_idx}"
-
-    logger = pl.loggers.TensorBoardLogger(
-        save_dir=log_dir,
-        name=name,
-        version=version,
-    )
-
-    early_stop_callback = EarlyStopping(
-        monitor="loss/val_loss", 
-        mode="min", 
-        patience=args.patience
-    )
-
-    checkpoint_callback = ModelCheckpoint(
-        monitor="loss/val_loss",
-        save_top_k=1,
-        mode="min",
-        filename='epoch={epoch}-val_loss={loss/val_loss:.3f}-val_bacc={bal_accuracy/val:.4f}',
-        auto_insert_metric_name=False,
-    )
-
-    trainer = pl.Trainer(
-        max_epochs=args.max_epochs,
-        deterministic=True,
-        gpus=1,
-        logger=logger,
-        check_val_every_n_epoch=args.check_val_every,
-        callbacks=[early_stop_callback, checkpoint_callback],
-        num_sanity_val_steps=2,
-    )
-    print("Fitting the model...")
-    trainer.fit(model=model, datamodule=dm)
-
-def trainer(args):
+def looper(args):
     # Loop over all train, val splits: 1996 - 2021 = 26 years in total
-    # For folder name
+    # time for folder name
     time = datetime.now().strftime("%Y%m%d%H%M%S")
-    for year_idx in range(26 - (args.init_train_length + args.val_length) + 1):
-        train(args, year_idx, time)
+    for year_idx in range(26 - (args.init_train_length + args.val_length)):
+        args.mode(args, year_idx, time)
 
 
 if __name__ == "__main__":
     seed_everything(42, workers=True)
 
     # Set path
-    path_data = pathlib.Path(
-        r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data"
-    )
+    # path_data = pathlib.Path(
+    #     r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data"
+    # )
     
     parser = ArgumentParser(description="Master Thesis Mathias Ruoss - Option\
         Return Classification")
-    # Logger
-    group = parser.add_argument_group("Logging Configuration")
-    group.add_argument("--tag", type=str, default='')
+    subparsers = parser.add_subparsers()
 
-    # EarlyStopping
-    group = parser.add_argument_group("Early Stopping Configuration")
-    # earlystop.add_argument("--monitor", type=str, default="loss/val_loss")
-    # earlystop.add_argument("--es_mode", type=str, default="min")
-    group.add_argument("--patience", type=int, default=3)
+    # subparser level
+    parser_train = subparsers.add_parser("train")
+    parser_train.set_defaults(mode=train)
+    parser_tune = subparsers.add_parser("tune")
+    parser_tune.set_defaults(mode=tune)
 
-    # ModelCheckpoint
-    # group = parser.add_argument_group("Model Checkpoint Configuration")
-    # group.add_argument("--monitor", type=str, default="loss/val_loss")
-    # group.add_argument("--save_top_k", type=int, default=1)
-    # group.add_argument("--check_mode", type=str, default="min")
+    # 2. subparser level
+    # subsubparser = parser_train.add_subparsers()
+    # parser_train_nn = subsubparser.add_parser("nn")
+    # parser_train_nn.set_defaults(model="nn")
 
-    # dm
-    group = parser.add_argument_group("Data Module Configuration")
-    group = MyDataModule.add_model_specific_args(group)  #add additional arguments directly in class method
+    # subsubparser = parser_tune.add_subparsers()
+    # parser_tune_nn = subsubparser.add_parser("nn")
+    # parser_tune_nn.set_defaults(model="nn")
 
-    # model
-    group = parser.add_argument_group("Model Configuration")
-    group = FFN.add_model_specific_args(group) #add additional arguments directly in class
+    parser_train.add_argument("model", choices=["nn"])
+    parser_tune.add_argument("model", choices=["nn"])
 
-    # trainer
-    group = parser.add_argument_group("Training Configuration")
-    group.add_argument("--max_epochs", type=int, default=1)
-    group.add_argument("--check_val_every", type=int, default=1)
-    # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
-    # loop
-    group = parser.add_argument_group("Loop Configuration")
-    group.add_argument("--init_train_length", type=int, default=10)
-    group.add_argument("--val_length", type=int, default=2)
-    group.add_argument("--test_length", type=int, default=1)
+    # parse mode and model first to determine which args  to load in load_args
+    args_, _ = parser.parse_known_args()
+
+    # load args only for the specified mode and model
+    load_args(locals()[f"parser_{args_.mode.__name__}"], 
+                args_.mode.__name__, args_.model)
+
+    # model agnostic hyperparams (valid for all mode and models)
+    cockpit = parser.add_argument_group("Loop Configuration")
+    cockpit.add_argument("--path_data", type=str, default= r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data")
+    cockpit.add_argument("--init_train_length", type=int, default=10)
+    cockpit.add_argument("--val_length", type=int, default=2)
+    cockpit.add_argument("--test_length", type=int, default=1)
 
     args = parser.parse_args()
 
-    trainer(args)
+    looper(args)

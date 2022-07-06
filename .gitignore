@@ -132,3 +132,4 @@ dmypy.json
 #### Custom Mathias ###
 .vscode
 logs
+lightning_logs
