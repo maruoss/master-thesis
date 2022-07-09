@@ -36,7 +36,29 @@ def string_from_config(config: dict, tag=''):
             name += "."
         name += k + "_"
         # name += "_"
-        name += v.domain_str
+        if isinstance(v, dict): # for params with gridsearch -> dict of list
+            for kk, vv in v.items():
+                name += kk
+                name += "_["
+                for j, i in enumerate(vv): # vv is a list
+                    if j:
+                        name += ","
+                    name += str(i)
+                name += "]"
+        else:
+            name += v.domain_str
     name += "}"
 
     return name
+
+
+def json_from_config(config: dict, tag=''):
+    """needed in tune to convert search space directory to serializable dictionary"""
+    dict_to_serialize = {}
+    for k, v in config.items():
+        if isinstance(v, dict): # for params with gridsearch -> dict of list
+            dict_to_serialize[k] = v
+        else:
+            dict_to_serialize[k] = v.domain_str
+
+    return dict_to_serialize

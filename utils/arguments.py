@@ -14,8 +14,6 @@ def load_args(parser, mode: str, model: str):
 
 
 def args_nn(parser_train):
-    # Train arguments
-    # parser_train = subparsers.add_parser("train")
 
     # Logger
     group = parser_train.add_argument_group("Logging Configuration")
@@ -34,11 +32,11 @@ def args_nn(parser_train):
     # group.add_argument("--check_mode", type=str, default="min")
 
     # dm
-    # group = parser.add_argument_group("Data Module Configuration")
+    # already implemented in model method: group = parser.add_argument_group("Data Module Configuration")
     group = MyDataModule_Loop.add_model_specific_args(parser_train)  #add additional arguments directly in class method
 
     # model
-    # group = parser.add_argument_group("Model Configuration")
+    # already implemented in model method: group = parser.add_argument_group("Model Configuration")
     group = FFN.add_model_specific_args(parser_train) #add additional arguments directly in class
 
     # trainer
@@ -46,8 +44,6 @@ def args_nn(parser_train):
     group.add_argument("--max_epochs", type=int, default=2)
     group.add_argument("--check_val_every", type=int, default=1)
     # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
-
-    # parser_train.set_defaults(mode=train)
 
 
 def args_tune(parser_tune):

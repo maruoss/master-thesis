@@ -15,6 +15,10 @@ class FFN(pl.LightningModule):
                 no_class_weights: bool,
                 hidden_dim: int,
                 learning_rate: float,
+                n_hidden: int,
+                batch_norm: bool,
+                dropout: bool,
+                drop_prob: float,
                 config: dict = None,
         ):
         super().__init__()
@@ -27,14 +31,31 @@ class FFN(pl.LightningModule):
         if config is not None:
             self.hidden_dim = config["hidden_dim"]
             self.learning_rate = config["lr"]
+            self.n_hidden = config["n_hidden"]
+            self.batch_norm = config["batch_norm"]
+            self.dropout = config["dropout"]
+            self.drop_prob = config["drop_prob"]
         else:
             self.hidden_dim = hidden_dim
             self.learning_rate = learning_rate
+            self.n_hidden = n_hidden
+            self.batch_norm = batch_norm
+            self.dropout = dropout
+            self.drop_prob = drop_prob
         
-        
+        middle_layers = []
+        for _ in range(self.n_hidden):
+            middle_layers.append(nn.Linear(self.hidden_dim, self.hidden_dim))
+            if self.batch_norm:
+                middle_layers.append(nn.BatchNorm1d(self.hidden_dim))
+            middle_layers.append(nn.ReLU(inplace=True))
+            if self.dropout:
+                middle_layers.append(nn.Dropout(p=self.drop_prob))
+
         #model
-        self.l1 = nn.Linear(input_dim, self.hidden_dim)
-        self.l2 = nn.Linear(self.hidden_dim, num_classes)
+        self.first = nn.Sequential(nn.Linear(input_dim, self.hidden_dim), nn.ReLU(inplace=True))
+        self.middle = nn.Sequential(*middle_layers)  
+        self.last = nn.Linear(self.hidden_dim, num_classes)
         
         #sample weights
         if not self.hparams.no_class_weights:
@@ -58,7 +79,10 @@ class FFN(pl.LightningModule):
             num_classes=num_classes, average="macro")
 
     def forward(self, x):
-        return self.l2(torch.relu(self.l1(x)))
+        x = self.first(x)
+        x = self.middle(x)
+        x = self.last(x)
+        return x
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -120,6 +144,9 @@ class FFN(pl.LightningModule):
         self.log("loss/test_loss", loss, prog_bar=True)
 
         return loss
+
+    def predict_step(self, batch, batch_idx):
+        return self(batch)
     
     @staticmethod
     def add_model_specific_args(parent_parser):
@@ -127,6 +154,10 @@ class FFN(pl.LightningModule):
         parser.add_argument("--no_class_weights", action='store_true')
         parser.add_argument("--hidden_dim", type=int, default=100)
         parser.add_argument("-lr", "--learning_rate", type=float, default=1e-2)
+        parser.add_argument("--n_hidden", type=int, default=0)
+        parser.add_argument("--no_batch_norm", action='store_false')
+        parser.add_argument("--no_dropout", action='store_false')
+        parser.add_argument("--drop_prob", type=float, default=0.5)
 
         return parent_parser
         
