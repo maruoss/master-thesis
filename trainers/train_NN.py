@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from datamodule_loop import MyDataModule_Loop
-from utils.logger import create_foldername, json_from_config, string_from_config
+from utils.logger import create_foldername, json_from_config, params_to_dict
 from model.neuralnetwork import FFN
 
 from ray.tune.integration.pytorch_lightning import TuneReportCallback, TuneReportCheckpointCallback
@@ -52,11 +52,18 @@ def nn_train(args, year_idx, time):
 
     # Set logging directory
     log_dir = "logs/train/nn_loops"
-    name = create_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
-    name = name+"/"+time
+    # name = create_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
+    name = time
     train_year_end = int(dm.dates.iloc[:dm.eoy_train].iloc[-1].strftime("%Y"))
     val_year_end = train_year_end+args.val_length
     version = f"train{train_year_end}_val{val_year_end}"
+
+    # save hyperparams as .json
+    summary_path = Path.cwd()/log_dir/time
+    summary_path.mkdir(exist_ok=True, parents=True)
+    with open(summary_path/"params.json", 'w') as f:
+        json.dump(params_to_dict(model=model, dm=dm, to_add=to_add, 
+                    to_exclude=to_exclude, tag=args.tag), fp=f, indent=3)
 
     logger = pl.loggers.TensorBoardLogger(
         save_dir=log_dir,
@@ -87,15 +94,31 @@ def nn_train(args, year_idx, time):
         callbacks=[early_stop_callback, checkpoint_callback],
         num_sanity_val_steps=2,
     )
+
     print("Fitting the model...")
     trainer.fit(model=model, datamodule=dm)
+
+    print("Save validation metrics of best model...")
+    val_results = trainer.validate(ckpt_path="best", datamodule=dm)[0] #is a list
+
+
+    # val summary path
+    summary_path = Path(Path.cwd(), log_dir, name)
+
+    # Rename metric names to align with tune
+    val_results["val_acc"] = val_results.pop("acc/val")
+    val_results["val_bal_acc"] = val_results.pop("bal_acc/val")
+    val_results["val_loss"] = val_results.pop("loss/val_loss")
+
+    return val_results, summary_path # dictionary of metrics, , path to save summary
 
 
 # used in main_loop, function needs to be defined before its usage
 def nn_tune(args, year_idx, time):
-        tune_nn_asha(args, year_idx, time)
+        best_result, summary_path = outer_nn_asha(args, year_idx, time)
+        return best_result, summary_path
 
-def train_nn_tune(config, args, year_idx, ckpt_path=None):
+def inner_nn_tune(config, args, year_idx, ckpt_path=None):
     # needed for reproducibility, will seed trainer (init of weights in NN?)
     pl.seed_everything(args.seed, workers=True)
 
@@ -171,7 +194,7 @@ def train_nn_tune(config, args, year_idx, ckpt_path=None):
 
     trainer.fit(model, datamodule=dm)
 
-def tune_nn_asha(args, year_idx, time):
+def outer_nn_asha(args, year_idx, time):
 
     config = {
         "hidden_dim": tune.choice([50, 100]),
@@ -193,9 +216,9 @@ def tune_nn_asha(args, year_idx, time):
 
     reporter = CLIReporter(
         parameter_columns=["hidden_dim", "lr", "batch_size"],
-        metric_columns=["val_loss", "val_bal_acc" ,"mean_pred", "training_iteration"])
+        metric_columns=["train_acc", "val_loss", "val_bal_acc", "mean_pred", "training_iteration"])
 
-    train_fn_with_parameters = tune.with_parameters(train_nn_tune,
+    train_fn_with_parameters = tune.with_parameters(inner_nn_tune,
                                                     args=args,
                                                     year_idx=year_idx,
 #                                                     data_dir=data_dir,
@@ -212,10 +235,11 @@ def tune_nn_asha(args, year_idx, time):
     name = time+"\\"+years
 
     # save config space as .json
-    result_path = Path.cwd()/log_dir/time
-    result_path.mkdir(exist_ok=True, parents=True)
-    with open(result_path/"config.json", 'w') as f:
-        json.dump(json_from_config(config), fp=f)
+    summary_path = Path.cwd()/log_dir/time
+    summary_path.mkdir(exist_ok=True, parents=True)
+    with open(summary_path/"config.json", 'w') as f:
+        pdb.set_trace()
+        json.dump(json_from_config(config), fp=f, indent=3)
 
     analysis = tune.run(train_fn_with_parameters,
         local_dir=log_dir,
@@ -234,11 +258,19 @@ def tune_nn_asha(args, year_idx, time):
 
     print("Best hyperparameters found were: ", analysis.best_config)
     
-    best_trial = analysis.get_best_trial("val_loss", "min", "last")
-    print("Best trial config: {}".format(best_trial.config))
+    best_trial = analysis.get_best_trial("val_loss", "min", "last") #change "last" to "all" for global min
+    print("Best trial among last epoch config: {}".format(best_trial.config))
     print("Best trial >>last epoch<< validation loss: {}".format(
         best_trial.last_result["val_loss"]))
     print("Best trial >>last epoch<< validation balanced accuracy: {}".format(
         best_trial.last_result["val_bal_acc"]))
     
-    return analysis
+
+    best_result_per_trial_df = analysis.dataframe(metric="val_loss", mode="min").sort_values("val_loss")
+    # save df to folder?
+    best_result = best_result_per_trial_df.iloc[0, :].to_dict() #take best values of best trial
+
+    #TODO For test prediction: best checkpoint out of all trials
+    # analysis.get_best_checkpoint(analysis.get_best_trial("val_loss", "min", scope="all"))
+    
+    return best_result, summary_path #dictionary of best metrics and config, path to save summary

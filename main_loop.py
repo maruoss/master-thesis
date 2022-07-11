@@ -13,23 +13,38 @@ from trainers.train_NN import nn_train, nn_tune
 def train(args, year_idx, time):
     """single loop with fixed hyperparameters"""
     if args.model == "nn":
-        nn_loop(args, year_idx, time)
+        best_result, summary_path = nn_train(args, year_idx, time)
     else:
         raise ValueError("specify an implemented model")
+
+    return best_result, summary_path
 
 def tune(args, year_idx, time):
     """hyperparameter search over a single loop"""
     if args.model == "nn":
-        nn_tune(args, year_idx, time)
+        best_result, summary_path = nn_tune(args, year_idx, time)
     else:
         raise ValueError("specify an implemented model")
+
+    return best_result, summary_path
 
 def looper(args):
     # Loop over all train, val splits: 1996 - 2021 = 26 years in total
     # time for folder name
     time = datetime.now().strftime("%Y%m%d%H%M%S")
-    for year_idx in range(26 - (args.init_train_length + args.val_length)):
-        args.mode(args, year_idx, time)
+    collect = {}
+    val_year_start = 1996 + args.init_train_length + 1
+    val_year_end = val_year_start + args.val_length - 1
+    #TODO for year_idx in range(26 - (args.init_train_length + args.val_length)):
+    for year_idx in range(1):
+        collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"], summary_path = args.mode(args, year_idx, time)
+    
+    # calculate mean, std and save to .csv
+    val_summary = pd.DataFrame(collect)
+    val_summary_floats = val_summary.apply(pd.to_numeric, axis=0, errors="coerce")
+    val_summary.insert(loc=0, column="std", value=val_summary_floats.std(axis=1))
+    val_summary.insert(loc=0, column="mean", value=val_summary_floats.mean(axis=1))
+    val_summary.to_csv(Path(summary_path,"val_summary.csv"))
 
 
 if __name__ == "__main__":

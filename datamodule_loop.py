@@ -162,6 +162,6 @@ class MyDataModule_Loop(pl.LightningDataModule):
         parser.add_argument("--batch_size", type=int, default=512)
         # parser.add_argument("--start_val", type=str, default="2014")
         # parser.add_argument("--start_test", type=str, default="2016")
-        parser.add_argument("--label_fn", type=str, default="binary")
+        parser.add_argument("--label_fn", type=str, default="binary", choices=["binary", "multi"])
 
         return parent_parser

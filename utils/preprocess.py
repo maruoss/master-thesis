@@ -54,15 +54,16 @@ def binary_categorize(y):
 def multi_categorize(y):
     """
     Input: continuous target variable
-
+    CAREFUL: classes have to be between [0, C) for F.crossentropyloss.
+    
     Output: multi class
     """
     if y > 0.05:
-        return 1
+        return 2
     elif y < -0.05:
-        return -1
-    else:
         return 0
+    else:
+        return 1
 
 
 # create gridsearch timeseries splits

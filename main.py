@@ -22,7 +22,7 @@ from argparse import ArgumentParser
 
 from datamodule import MyDataModule
 from model.neuralnetwork import FFN
-from utils.logger import log_foldername
+from utils.logger import create_foldername
 
 
 def train(args):
@@ -38,24 +38,28 @@ def train(args):
     dm.setup() #needed for model parameters
     print("dm is set up!")
     model = FFN(
-        # dm=dm,
         input_dim=dm.input_dim,
         num_classes=dm.num_classes,
         class_weights=dm.class_weights,
         no_class_weights=args.no_class_weights,
         hidden_dim=args.hidden_dim,
         learning_rate=args.learning_rate,
+        n_hidden=args.n_hidden,
+        batch_norm=args.no_batch_norm,
+        dropout=args.no_dropout,
+        drop_prob=args.drop_prob,
     )
+    
     print("Model is loaded!")
 
     # specify which parameters will be added/ removed from logging folder name
     to_add = {"max_epochs": args.max_epochs}
-    to_exclude = []
+    to_exclude = ["class_weights", "year_idx", "config"]
     # to_exclude = ["path", "dm"] -> moved to parameter "ignore" of save_hyperparameters
 
     # Set logging directory
     log_dir = "logs"
-    name = log_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
+    name = create_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
     version = datetime.now().strftime("%Y%m%d%H%M%S")
 
     logger = pl.loggers.TensorBoardLogger(
