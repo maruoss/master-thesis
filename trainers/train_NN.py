@@ -101,6 +101,15 @@ def nn_train(args, year_idx, time):
     print("Save validation metrics of best model...")
     val_results = trainer.validate(ckpt_path="best", datamodule=dm)[0] #is a list
 
+    if args.predict:
+        print("Predict on test set and save to csv...")
+        preds = trainer.predict(ckpt_path="best", datamodule=dm)
+        preds_argmax = preds[0].argmax(dim=1).numpy()
+        preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
+        test_year_end = val_year_end + args.test_length
+        # prediction path
+        save_to_dir = Path(Path.cwd(),log_dir, name, version, f"prediction{test_year_end}.csv")
+        preds_argmax_df.to_csv(save_to_dir, index_label="id")
 
     # val summary path
     summary_path = Path(Path.cwd(), log_dir, name)
@@ -113,12 +122,9 @@ def nn_train(args, year_idx, time):
     return val_results, summary_path # dictionary of metrics, , path to save summary
 
 
-# used in main_loop, function needs to be defined before its usage
-def nn_tune(args, year_idx, time):
-        best_result, summary_path = outer_nn_asha(args, year_idx, time)
-        return best_result, summary_path
+# ***********************************************************************************
 
-def inner_nn_tune(config, args, year_idx, ckpt_path=None):
+def inner_nn_tune(config, args, year_idx, best_ckpt_path=None):
     # needed for reproducibility, will seed trainer (init of weights in NN?)
     pl.seed_everything(args.seed, workers=True)
 
@@ -194,7 +200,7 @@ def inner_nn_tune(config, args, year_idx, ckpt_path=None):
 
     trainer.fit(model, datamodule=dm)
 
-def outer_nn_asha(args, year_idx, time):
+def nn_tune(args, year_idx, time):
 
     config = {
         "hidden_dim": tune.choice([50, 100]),
@@ -221,7 +227,7 @@ def outer_nn_asha(args, year_idx, time):
     train_fn_with_parameters = tune.with_parameters(inner_nn_tune,
                                                     args=args,
                                                     year_idx=year_idx,
-#                                                     data_dir=data_dir,
+#                                                     ckpt_path=None,
                                                    )
     resources_per_trial = {"cpu": 1, "gpu": args.gpus_per_trial}
 
@@ -258,19 +264,62 @@ def outer_nn_asha(args, year_idx, time):
 
     print("Best hyperparameters found were: ", analysis.best_config)
     
-    best_trial = analysis.get_best_trial("val_loss", "min", "last") #change "last" to "all" for global min
-    print("Best trial among last epoch config: {}".format(best_trial.config))
+    best_last_trial = analysis.get_best_trial("val_loss", "min", "last") #change "last" to "all" for global min
+    print("Best trial among last epoch config: {}".format(best_last_trial.config))
     print("Best trial >>last epoch<< validation loss: {}".format(
-        best_trial.last_result["val_loss"]))
+        best_last_trial.last_result["val_loss"]))
     print("Best trial >>last epoch<< validation balanced accuracy: {}".format(
-        best_trial.last_result["val_bal_acc"]))
+        best_last_trial.last_result["val_bal_acc"]))
     
 
     best_result_per_trial_df = analysis.dataframe(metric="val_loss", mode="min").sort_values("val_loss")
     # save df to folder?
     best_result = best_result_per_trial_df.iloc[0, :].to_dict() #take best values of best trial
 
-    #TODO For test prediction: best checkpoint out of all trials
-    # analysis.get_best_checkpoint(analysis.get_best_trial("val_loss", "min", scope="all"))
-    
+    # test prediction: best checkpoint out of all trials
+    if args.predict:
+        # TODO
+        best_ckpt_path = Path(analysis.get_best_checkpoint(analysis.get_best_trial
+        ("val_loss", "min", scope="all")).get_internal_representation()[1], "checkpoint")
+        # retrain_fn_with_parameters = tune.with_parameters(inner_nn_tune, args=args,
+        #                                             year_idx=year_idx, 
+        #                                             best_ckpt_path=best_ckpt_path)
+        
+        # analysis = tune.run(predict_fn_with_parameters,
+        # local_dir=log_dir,
+        # resources_per_trial=resources_per_trial,
+        # # metric="val_loss",
+        # # mode="min",
+        # config=config,
+        # num_samples=args.num_samples,
+        # scheduler=scheduler,
+        # progress_reporter=reporter,
+        # name=name,
+        # fail_fast=True, # stop all trials as soon as any trial errors
+        # keep_checkpoints_num=1, # only keep best checkpoint
+        # checkpoint_score_attr="min-val_loss",
+        # )
+        model = FFN.load_from_checkpoint(best_ckpt_path)
+        dm = MyDataModule_Loop(
+            path=args.path_data,
+            year_idx=year_idx,
+            dataset=args.dataset,
+            batch_size=None,
+            init_train_length=args.init_train_length,
+            val_length=args.val_length,
+            label_fn=args.label_fn,
+            config=model.hparams.config, # so that config is not hyperparam search again
+        )
+        trainer = pl.Trainer(
+            deterministic=True,
+            gpus=args.gpus_per_trial,
+        )
+        preds = trainer.predict(model=model, datamodule=dm)
+        preds_argmax = preds[0].argmax(dim=1).numpy()
+        preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
+        test_year_end = val_year_end + args.test_length
+        # prediction path
+        save_to_dir = Path(Path.cwd(),log_dir, name, f"prediction{test_year_end}.csv")
+        preds_argmax_df.to_csv(save_to_dir, index_label="id")
+        
     return best_result, summary_path #dictionary of best metrics and config, path to save summary
