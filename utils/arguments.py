@@ -45,12 +45,12 @@ def args_nn(parser_train):
     group.add_argument("--check_val_every", type=int, default=1)
     # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
-
+# additional arguments for tune, see load_args function
 def args_tune(parser_tune):
 
     # Tune configuration
     group = parser_tune.add_argument_group("Tune Configuration")
-    group.add_argument("--num_samples", type=int, default=2)
+    group.add_argument("--num_samples", type=int, default=1)
     group.add_argument("--gpus_per_trial", type=int, default=1)
 
     # ASHA scheduler configuration

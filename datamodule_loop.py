@@ -19,16 +19,10 @@ class MyDataModule_Loop(pl.LightningDataModule):
                 #  start_val: str, 
                 #  start_test: str,
                  label_fn: str,
-                 config: dict = None,
+                #  config: dict = None,
         ):
         super().__init__()
         self.save_hyperparameters(ignore=["path"])
-        
-        # tune or train?
-        if config is not None:
-            self.batch_size = config["batch_size"]
-        else:
-            self.batch_size = batch_size
         
         # read data from disk
         path = pathlib.Path(path)
@@ -135,24 +129,31 @@ class MyDataModule_Loop(pl.LightningDataModule):
 
     def train_dataloader(self):
         dataset = TensorDataset(self.X_train, self.y_train)
-        return DataLoader(dataset, batch_size=self.batch_size,
+        return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
                          )
 
     def val_dataloader(self):
         dataset = TensorDataset(self.X_val, self.y_val)
-        return DataLoader(dataset, batch_size=self.batch_size,
+        return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
                          )
 
     def test_dataloader(self):
         dataset = TensorDataset(self.X_test, self.y_test)
-        return DataLoader(dataset, batch_size=self.batch_size,
+        return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
                          )
+
+    def predict_dataloader(self):
+        dataset = self.X_test # predict_step expects tensor not a list
+        return DataLoader(dataset, batch_size=len(self.X_test), #load the whole testset
+                    num_workers=4,
+                    pin_memory=True,
+                    )
 
     @staticmethod
     def add_model_specific_args(parent_parser):

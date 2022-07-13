@@ -13,49 +13,33 @@ class FFN(pl.LightningModule):
                 num_classes: int,
                 class_weights: torch.Tensor,
                 no_class_weights: bool,
-                hidden_dim: int,
                 learning_rate: float,
+                hidden_dim: int,
                 n_hidden: int,
                 batch_norm: bool,
                 dropout: bool,
                 drop_prob: float,
-                config: dict = None,
+                # config: dict = None,
         ):
         super().__init__()
         # Init variables are saved, so that model can be reloaded cleanly if necessary
         # self.save_hyperparameters(ignore=["class_weights"])
         self.save_hyperparameters()
-        #ignore "dm" is crucial if dm is passed
 
-        # tune or train?
-        if config is not None:
-            self.hidden_dim = config["hidden_dim"]
-            self.learning_rate = config["lr"]
-            self.n_hidden = config["n_hidden"]
-            self.batch_norm = config["batch_norm"]
-            self.dropout = config["dropout"]
-            self.drop_prob = config["drop_prob"]
-        else:
-            self.hidden_dim = hidden_dim
-            self.learning_rate = learning_rate
-            self.n_hidden = n_hidden
-            self.batch_norm = batch_norm
-            self.dropout = dropout
-            self.drop_prob = drop_prob
-        
         middle_layers = []
-        for _ in range(self.n_hidden):
-            middle_layers.append(nn.Linear(self.hidden_dim, self.hidden_dim))
-            if self.batch_norm:
-                middle_layers.append(nn.BatchNorm1d(self.hidden_dim))
+        for _ in range(self.hparams.n_hidden):
+            middle_layers.append(nn.Linear(self.hparams.hidden_dim, self.hparams.hidden_dim))
+            if self.hparams.batch_norm:
+                middle_layers.append(nn.BatchNorm1d(self.hparams.hidden_dim))
             middle_layers.append(nn.ReLU(inplace=True))
-            if self.dropout:
-                middle_layers.append(nn.Dropout(p=self.drop_prob))
+            if self.hparams.dropout:
+                middle_layers.append(nn.Dropout(p=self.hparams.drop_prob))
 
         #model
-        self.first = nn.Sequential(nn.Linear(input_dim, self.hidden_dim), nn.ReLU(inplace=True))
+        self.first = nn.Sequential(nn.Linear(self.hparams.input_dim, self.hparams.hidden_dim), 
+                                    nn.ReLU(inplace=True))
         self.middle = nn.Sequential(*middle_layers)  
-        self.last = nn.Linear(self.hidden_dim, num_classes)
+        self.last = nn.Linear(self.hparams.hidden_dim, self.hparams.num_classes)
         
         #sample weights
         if not self.hparams.no_class_weights:
@@ -72,11 +56,11 @@ class FFN(pl.LightningModule):
         #metrics
         self.train_acc = torchmetrics.Accuracy()
         self.train_bal_acc = torchmetrics.Accuracy(
-        num_classes=num_classes, average="macro") # should be equal to sklearn bal. acc.
+        num_classes=self.hparams.num_classes, average="macro") # should be equal to sklearn bal. acc.
 
         self.val_acc = torchmetrics.Accuracy()
         self.val_bal_acc= torchmetrics.Accuracy(
-            num_classes=num_classes, average="macro")
+            num_classes=self.hparams.num_classes, average="macro")
 
     def forward(self, x):
         x = self.first(x)
@@ -100,7 +84,7 @@ class FFN(pl.LightningModule):
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        return torch.optim.Adam(self.parameters(), lr=self.hparams.learning_rate)
     
     def validation_step(self, batch, batch_idx):
         x, y = batch

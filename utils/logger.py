@@ -52,14 +52,14 @@ def create_foldername(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''
 #     return name
 
 
-def json_from_config(config: dict, tag=''):
+def serialize_config(config: dict, tag=''):
     """needed in tune to convert search space directory to serializable dictionary"""
     dict_to_serialize = {}
     for k, v in config.items():
-        if isinstance(v, dict): # for params with gridsearch -> dict of list
+        try: # ray tune objects
+             dict_to_serialize[k] = v.domain_str
+        except: # all other objects, gridsearch and ints/floats
             dict_to_serialize[k] = v
-        else:
-            dict_to_serialize[k] = v.domain_str
 
     return dict_to_serialize
 
@@ -78,3 +78,15 @@ def params_to_dict(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''):
             dic[k] = v
 
     return dic
+
+
+def serialize_args(args_dict: dict):
+    """convert args directory to serializable directory"""
+    dict_to_serialize = {}
+    for k, v in args_dict.items():
+        if callable(v): # if arg is a function (old behavior of train and tune)
+            dict_to_serialize[k] = v.__name__
+        else:
+            dict_to_serialize[k] = v
+
+    return dict_to_serialize
