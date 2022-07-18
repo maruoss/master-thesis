@@ -20,7 +20,7 @@ from ray.tune import CLIReporter
 
 from torch import nn
 
-def nn_train(args, year_idx, time, ckpt_path=None):
+def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     dm = MyDataModule_Loop(
         path=args.path_data,
         year_idx=year_idx,
@@ -28,8 +28,6 @@ def nn_train(args, year_idx, time, ckpt_path=None):
         batch_size=args.batch_size,
         init_train_length=args.init_train_length,
         val_length=args.val_length,
-        # start_val=args.start_val,
-        # start_test=args.start_test,
         label_fn=args.label_fn
     )
     dm.setup() #needed for model parameters
@@ -50,7 +48,8 @@ def nn_train(args, year_idx, time, ckpt_path=None):
 
     # specify which parameters will be added/ removed from logging folder name
     to_add = {"max_epochs": args.max_epochs}
-    to_exclude = ["class_weights", "year_idx", "config"]
+    # to_exclude = ["class_weights", "year_idx", "config"]
+    to_exclude = []
     # to_exclude = ["path", "dm"] -> moved to parameter "ignore" of save_hyperparameters
 
     # Set logging directory
@@ -135,7 +134,7 @@ def nn_train(args, year_idx, time, ckpt_path=None):
     val_results["val_bal_acc"] = val_results.pop("bal_acc/val")
     val_results["val_loss"] = val_results.pop("loss/val_loss")
 
-    return val_results, summary_path, ckpt_path # dictionary of metrics, , path to save summary
+    return val_results, summary_path, ckpt_path, config # dictionary of metrics, , path to save summary
 
 
 # ***********************************************************************************
@@ -151,10 +150,7 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
         batch_size=config["batch_size"],
         init_train_length=args.init_train_length,
         val_length=args.val_length,
-        # start_val=args.start_val,
-        # start_test=args.start_test,
         label_fn=args.label_fn,
-        # config=config,
     )
     
     dm.setup()
@@ -170,11 +166,10 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
         batch_norm=config["batch_norm"],
         dropout=config["dropout"],
         drop_prob=config["drop_prob"],
-        # config=config,
     )
 
     if ckpt_path:
-        pdb.set_trace()
+        # pdb.set_trace()
         print(f"Loading model from path at {ckpt_path}")
         model = FFN.load_from_checkpoint(ckpt_path)
 

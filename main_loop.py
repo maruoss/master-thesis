@@ -5,24 +5,32 @@ import pandas as pd
 
 from pytorch_lightning import seed_everything
 from argparse import ArgumentParser
+from utils.helper import summary_to_csv
+from trainers.trainer_sk import sk_run
 from utils.arguments import load_args
 from trainers.trainer_nn import nn_train, nn_tune
 
 
 
-def train(args, year_idx, time, ckpt_path):
-    """single loop with fixed hyperparameters"""
-    if args.model == "nn":
-        best_result, summary_path, ckpt_path = nn_train(args, year_idx, time, ckpt_path)
+# def train(args, year_idx, time, ckpt_path):
+#     """single loop with fixed hyperparameters"""
+#     if args.model == "nn":
+#         best_result, summary_path, ckpt_path = nn_train(args, year_idx, time, ckpt_path)
 
-    return best_result, summary_path, ckpt_path
+#     return best_result, summary_path, ckpt_path
 
-def tune(args, year_idx, time, ckpt_path, config):
+def run(args, year_idx, time, ckpt_path, config):
     """hyperparameter search over a single loop"""
-    if args.model == "nn":
-        # no checkpoint here -> no refit possible
-        best_result, summary_path, ckpt_path, config \
-            = nn_tune(args, year_idx, time, ckpt_path, config)
+    fun_dict = {
+                "nn_train": nn_train, 
+                "nn_tune": nn_tune, 
+                "lin_tune": sk_run,
+                "svm_tune": sk_run,
+                }
+
+    # no checkpoint here -> no refit possible
+    best_result, summary_path, ckpt_path, config \
+        = fun_dict[f"{args.model}_{args.mode}"](args, year_idx, time, ckpt_path, config)
 
     return best_result, summary_path, ckpt_path, config
 
@@ -37,27 +45,14 @@ def looper(args):
     best_config = None # for tune
     #TODO for year_idx in range(26 - (args.init_train_length + args.val_length)):
     for year_idx in range(2):
-        if args.mode == "train":
-            collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"], \
-            summary_path, \
-            best_ckpt_path, \
-            = train(args, year_idx, time, best_ckpt_path)
+        collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"], \
+        summary_path, \
+        best_ckpt_path, \
+        best_config, \
+        = run(args, year_idx, time, best_ckpt_path, best_config)
 
-        elif args.mode == "tune":
-            collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"], \
-            summary_path, \
-            best_ckpt_path, \
-            best_config, \
-            = tune(args, year_idx, time, best_ckpt_path, best_config)
-        else:
-            raise NameError("Choose either train or tune as a mode.")
-    
     # calculate mean, std and save to .csv
-    val_summary = pd.DataFrame(collect)
-    val_summary_floats = val_summary.apply(pd.to_numeric, axis=0, errors="coerce")
-    val_summary.insert(loc=0, column="std", value=val_summary_floats.std(axis=1))
-    val_summary.insert(loc=0, column="mean", value=val_summary_floats.mean(axis=1))
-    val_summary.to_csv(Path(summary_path,"val_summary.csv"))
+    summary_to_csv(collect, summary_path)
 
 if __name__ == "__main__":
 
@@ -67,9 +62,9 @@ if __name__ == "__main__":
 
     # subparser level
     parser_train = subparsers.add_parser("train")
-    parser_train.set_defaults(mode="train")
-    parser_tune = subparsers.add_parser("tune")
-    parser_tune.set_defaults(mode="tune")
+    parser_train.set_defaults(mode="train") # string can also be a function
+    parser_tune = subparsers.add_parser("tune") 
+    parser_tune.set_defaults(mode="tune") # string can also be a function
 
     # 2. subparser level
     # subsubparser = parser_train.add_subparsers()
@@ -81,7 +76,7 @@ if __name__ == "__main__":
     # parser_tune_nn.set_defaults(model="nn")
 
     parser_train.add_argument("model", choices=["nn"])
-    parser_tune.add_argument("model", choices=["nn"])
+    parser_tune.add_argument("model", choices=["nn", "lin", "svm"])
 
     # parse mode and model first to determine which args  to load in load_args
     args_, _ = parser.parse_known_args()
@@ -94,7 +89,6 @@ if __name__ == "__main__":
     cockpit = parser.add_argument_group("Loop Configuration")
     cockpit.add_argument("--seed", type=int, default=42)
     cockpit.add_argument("--path_data", type=str, default= r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data")
-    # tune params (ignore in train)
     cockpit.add_argument("--init_train_length", type=int, default=10)
     cockpit.add_argument("--val_length", type=int, default=2)
     cockpit.add_argument("--test_length", type=int, default=1)

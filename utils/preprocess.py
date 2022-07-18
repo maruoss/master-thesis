@@ -85,7 +85,7 @@ class CVSplitter:
         "defined train and val are larger than number of years in dataset"
         assert init_train_length > 0, "init_train_length must be strictly greater than 0"
 
-        # align, the 4th idx is the end of the 5th year...
+        # align the 4th idx to be the end of the 5th year...
         self.train_start_idx = init_train_length - 1
 
         self.train_eoy = self.eoy_idx[self.train_start_idx:-(val_length+test_length)]

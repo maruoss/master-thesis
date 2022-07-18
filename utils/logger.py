@@ -1,5 +1,4 @@
 
-
 import pdb
 
 
@@ -72,7 +71,8 @@ def params_to_dict(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''):
             dic[k] = v
     for k, v in model.hparams.items():
         if k not in to_exclude:
-            dic[k] = v
+            try: dic[k] = v.numpy().tolist() # to handle tensor "class_weight"
+            except: dic[k] = v
     for k, v in dm.hparams.items():
         if k not in to_exclude:
             dic[k] = v
