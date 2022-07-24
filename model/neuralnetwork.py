@@ -1,3 +1,4 @@
+import pdb
 import time
 import torch
 from torch import nn
@@ -73,6 +74,7 @@ class FFN(pl.LightningModule):
         y_hat = self(x) #logits
         
         loss = F.cross_entropy(y_hat, y, weight=self.class_weights)
+        # Logging is done "log_every_n_steps" times (default=50 steps)
         self.log("loss/loss", loss, on_step=True, on_epoch=False, prog_bar=True)
         
         self.train_acc(y_hat, y)

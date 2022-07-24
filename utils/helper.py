@@ -1,6 +1,8 @@
 
+import json
 from pathlib import Path
 import pandas as pd
+from utils.logger import serialize_args, serialize_config
 
 
 def summary_to_csv(collect:dict, summary_path: Path):
@@ -35,3 +37,27 @@ def get_best_score(gs):
         dic["train_bal_acc"] = gs.cv_results_["mean_train_balanced_accuracy"][gs.best_index_]
     
     return dic
+
+def set_tune_log_dir(args, year_idx, time, config):
+    """set up paths and save config and args there"""
+    # Set logging directory for tune.run
+    log_dir = f"./logs/tune/{args.model}_loops"
+    # name = time+"_"+string_from_config(config) # config into path 
+    # CAREFUL: will give error if directory path is too large
+    train_year_end = 1996 + args.init_train_length + year_idx - 1
+    val_year_end = train_year_end + args.val_length
+    years = f"train{train_year_end}_val{val_year_end}"
+    name = time+"\\"+years
+
+    # save config space as .json
+    summary_path = Path.cwd()/log_dir/time
+    summary_path.mkdir(exist_ok=True, parents=True)
+    with open(summary_path/"config.json", 'w') as f:
+        json.dump(serialize_config(config), fp=f, indent=3)
+
+    # save args to json
+    args_dict = serialize_args(args.__dict__) #functions are not serializable
+    with open(summary_path/'args.json', 'w') as f:
+        json.dump(args_dict, f, indent=3)
+        
+    return log_dir, val_year_end, name, summary_path

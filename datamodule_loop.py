@@ -301,7 +301,7 @@ class Dataset():
         return self.X_train, self.X_val, self.X_test
     
     def get_cv_data(self):
-        """return datasets and cv split needed for gridsearchcv
+        """for sk classifiers: return datasets and cv split needed for gridsearchcv
         only 1 train/val split"""
         # careful: if predicting on X_val later... -> cheating
         X = np.concatenate((self.X_train, self.X_val))
@@ -312,6 +312,13 @@ class Dataset():
         assert ps.get_n_splits() == 1, "more than one train/ val split in PredefinedSplit"
         
         return X, y, ps
+
+    def get_train_val(self):
+        """used in xgboost"""
+        return self.X_train, self.X_val, self.y_train, self.y_val
+
+    def get_test(self):
+        return self.X_test, self.y_test
 
     @staticmethod
     def add_model_specific_args(parent_parser):

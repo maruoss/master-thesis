@@ -10,6 +10,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 # from yaml import serialize
 
 from datamodule_loop import MyDataModule_Loop
+from utils.helper import set_tune_log_dir
 from utils.logger import create_foldername, serialize_args, serialize_config, params_to_dict
 from model.neuralnetwork import FFN
 
@@ -17,8 +18,8 @@ from ray.tune.integration.pytorch_lightning import TuneReportCallback, TuneRepor
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune import CLIReporter
-
 from torch import nn
+
 
 def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     dm = MyDataModule_Loop(
@@ -134,7 +135,8 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     val_results["val_bal_acc"] = val_results.pop("bal_acc/val")
     val_results["val_loss"] = val_results.pop("loss/val_loss")
 
-    return val_results, summary_path, ckpt_path, config # dictionary of metrics, , path to save summary
+    # dict, Path obj., Path obj, dict
+    return val_results, summary_path, ckpt_path, config
 
 
 # ***********************************************************************************
@@ -152,9 +154,8 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
         val_length=args.val_length,
         label_fn=args.label_fn,
     )
-    
     dm.setup()
-    
+
     model = FFN(
         input_dim=dm.input_dim,
         num_classes=dm.num_classes,
@@ -168,8 +169,8 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
         drop_prob=config["drop_prob"],
     )
 
+    # If --refit is active, ckpt_path will be best model of last loop.
     if ckpt_path:
-        # pdb.set_trace()
         print(f"Loading model from path at {ckpt_path}")
         model = FFN.load_from_checkpoint(ckpt_path)
 
@@ -188,17 +189,18 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
     # )
 
     tune_callback = TuneReportCheckpointCallback(
-    metrics={
-        "train_loss": "loss/loss",
-        "train_acc" : "acc/train",
-        "train_bal_acc": "bal_acc/train",
-        "val_loss": "loss/val_loss",
-        "val_acc": "acc/val",
-        "val_bal_acc": "bal_acc/val",
-        "mean_pred": "mean_pred",
-    },
-    filename="checkpoint",
-    on="validation_end")
+        metrics={
+            "train_loss": "loss/loss",
+            "train_acc" : "acc/train", # currently cant be found by raytune
+            "train_bal_acc": "bal_acc/train", # currenctly cant be found by raytune
+            "val_loss": "loss/val_loss",
+            "val_acc": "acc/val",
+            "val_bal_acc": "bal_acc/val",
+            "mean_pred": "mean_pred",
+        },
+        filename="checkpoint",
+        on="validation_end"
+    )
     
     trainer = pl.Trainer(
         deterministic=True,
@@ -240,7 +242,6 @@ def nn_tune(args, year_idx, time, ckpt_path, start_config: dict):
     }
 
     if args.refit and start_config is not None:
-        pdb.set_trace()
         config = start_config.copy()
         config.update({
             "lr": tune.qloguniform(1e-4, 1e-1, 5e-5), #round to 5e-5 steps
@@ -252,6 +253,7 @@ def nn_tune(args, year_idx, time, ckpt_path, start_config: dict):
     best_result, summary_path, best_ckpt_path, best_config = \
     nn_tune_from_config(args, year_idx, time, ckpt_path, config=config)
 
+    # dict, Path obj., Path obj, dict
     return best_result, summary_path, best_ckpt_path, best_config
 
 
@@ -260,13 +262,15 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
     scheduler = ASHAScheduler(
         max_t=args.max_epochs,
         grace_period=args.grace_period,
-        reduction_factor=args.reduction_factor)
-
+        reduction_factor=args.reduction_factor
+    )
     reporter = CLIReporter(
         parameter_columns=["hidden_dim", "lr", "batch_size"],
         metric_columns=["train_loss", "val_loss", "val_bal_acc", "mean_pred", 
-        "training_iteration"])
-
+                        "training_iteration"],
+        max_report_frequency=60, 
+        print_intermediate_tables=True
+    )
     train_fn_with_parameters = tune.with_parameters(inner_nn_tune,
                                                     args=args,
                                                     year_idx=year_idx,
@@ -274,28 +278,10 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                                                    )
     resources_per_trial = {"cpu": 1, "gpu": args.gpus_per_trial}
 
-    # Set logging directory for tune.run
-    log_dir = "./logs/tune/nn_loops"
-    # name = time+"_"+string_from_config(config) # config into path 
-    # CAREFUL: will give error if directory path is too large
-    train_year_end = 1996 + args.init_train_length + year_idx - 1
-    val_year_end = train_year_end + args.val_length
-    years = f"train{train_year_end}_val{val_year_end}"
-    name = time+"\\"+years
+    log_dir, val_year_end, name, summary_path = set_tune_log_dir(args, year_idx, time, config)
 
-    # save config space as .json
-    summary_path = Path.cwd()/log_dir/time
-    summary_path.mkdir(exist_ok=True, parents=True)
-    with open(summary_path/"config.json", 'w') as f:
-        json.dump(serialize_config(config), fp=f, indent=3)
-
-    # save args to json
-    args_dict = serialize_args(args.__dict__) #functions are not serializable
-    with open(summary_path/'args.json', 'w') as f:
-        json.dump(args_dict, f, indent=3)
-
-
-    analysis = tune.run(train_fn_with_parameters,
+    analysis = tune.run(
+        train_fn_with_parameters,
         local_dir=log_dir,
         resources_per_trial=resources_per_trial,
         metric="val_loss",
@@ -311,7 +297,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         )
 
     print("Best hyperparameters found were: ", analysis.best_config)
-    
+
     best_last_trial = analysis.get_best_trial("val_loss", "min", "last") #change "last" to "all" for global min
     print("Best trial among last epoch config: {}".format(best_last_trial.config))
     print("Best trial >>last epoch<< validation loss: {}".format(
@@ -319,20 +305,32 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
     print("Best trial >>last epoch<< validation balanced accuracy: {}".format(
         best_last_trial.last_result["val_bal_acc"]))
     
-
+    # should yield the data for the best checkpoint, if checkpoints are made every epoch
     best_result_per_trial_df = analysis.dataframe(metric="val_loss", 
-                                            mode="min").sort_values("val_loss")
+                                                  mode="min").sort_values("val_loss")
     # save df to folder?
     best_result = best_result_per_trial_df.iloc[0, :].to_dict() #take best values of best trial
 
-    # test prediction: best checkpoint out of all trials
+    # test prediction: use best checkpoint out of all trials
     best_trial = analysis.get_best_trial("val_loss", "min", scope="all")
+    best_config = best_trial.config
+    
+    # Loop Path for best_config and prediction.csv.
+    loop_path = Path(Path.cwd(), log_dir, name)
+
+    # Save best config as .json.
+    with open(loop_path/"best_config.json", 'w') as f:
+        json.dump(serialize_config(best_config), fp=f, indent=3)
+
     if args.refit:
         config = best_trial.config
-        ckpt_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1], "checkpoint")
+        ckpt_path = Path(analysis.get_best_checkpoint(best_trial)
+                        .get_internal_representation()[1], "checkpoint")
     
     if not args.no_predict:
-        best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1], "checkpoint")
+        # load best model
+        best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1],
+                        "checkpoint")
         print(f"Loading model from path at {ckpt_path}")
         model = FFN.load_from_checkpoint(best_path)
         dm = MyDataModule_Loop(
@@ -349,13 +347,14 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
             deterministic=True,
             gpus=args.gpus_per_trial,
         )
+        # predict
         preds = trainer.predict(model=model, datamodule=dm)
         preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
         preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
         test_year_end = val_year_end + args.test_length
         # prediction path
-        save_to_dir = Path(Path.cwd(),log_dir, name, f"prediction{test_year_end}.csv")
+        save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_argmax_df.to_csv(save_to_dir, index_label="id")
         
+    # dict, Path obj., Path obj, dict
     return best_result, summary_path, ckpt_path, config 
-    #dictionary of best metrics and config, path

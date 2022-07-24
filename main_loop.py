@@ -5,6 +5,7 @@ import pandas as pd
 
 from pytorch_lightning import seed_everything
 from argparse import ArgumentParser
+from trainers.trainer_xgb import xgb_tune
 from utils.helper import summary_to_csv
 from trainers.trainer_sk import sk_run
 from utils.arguments import load_args
@@ -26,6 +27,7 @@ def run(args, year_idx, time, ckpt_path, config):
                 "nn_tune": nn_tune, 
                 "lin_tune": sk_run,
                 "svm_tune": sk_run,
+                "xgb_tune": xgb_tune,
                 }
 
     # no checkpoint here -> no refit possible
@@ -76,7 +78,7 @@ if __name__ == "__main__":
     # parser_tune_nn.set_defaults(model="nn")
 
     parser_train.add_argument("model", choices=["nn"])
-    parser_tune.add_argument("model", choices=["nn", "lin", "svm"])
+    parser_tune.add_argument("model", choices=["nn", "lin", "svm", "xgb"])
 
     # parse mode and model first to determine which args  to load in load_args
     args_, _ = parser.parse_known_args()
@@ -92,8 +94,8 @@ if __name__ == "__main__":
     cockpit.add_argument("--init_train_length", type=int, default=10)
     cockpit.add_argument("--val_length", type=int, default=2)
     cockpit.add_argument("--test_length", type=int, default=1)
-    cockpit.add_argument("--no_predict", action="store_true")
-    cockpit.add_argument("--refit", action="store_true")
+    cockpit.add_argument("--no_predict", action="store_true") #default: predict
+    cockpit.add_argument("--refit", action="store_true") #default: no refit
 
     args = parser.parse_args()
 

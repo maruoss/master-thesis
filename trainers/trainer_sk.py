@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import pdb
 import numpy as np
+import pandas as pd
 from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -9,13 +10,14 @@ from tensorboard import summary
 from tune_sklearn import TuneGridSearchCV
 from datamodule_loop import Dataset
 from sklearn.utils.class_weight import compute_class_weight
-from utils.helper import get_best_score
+from utils.helper import get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
 from sklearn.kernel_approximation import Nystroem
 
 from utils.logger import serialize_args, serialize_config
 
 import time as t
+
 
 def sk_run(args, year_idx, time, ckpt_path, config):
 
@@ -24,7 +26,6 @@ def sk_run(args, year_idx, time, ckpt_path, config):
         path=args.path_data,
         year_idx=year_idx,
         dataset=args.dataset,
-        # batch_size=args.batch_size,
         init_train_length=args.init_train_length,
         val_length=args.val_length,
         label_fn=args.label_fn,
@@ -36,30 +37,15 @@ def sk_run(args, year_idx, time, ckpt_path, config):
     # load scikit classifier and specified param grid
     clf, parameter_grid = load_skmodel_and_param(args, data)
 
-    log_dir = f"./logs/tune/{args.model}_loops"
-    train_year_end = 1996 + args.init_train_length + year_idx - 1
-    val_year_end = train_year_end + args.val_length
-    years = f"train{train_year_end}_val{val_year_end}"
-    name = time+"\\"+years
-
-    # save parameter grid as .json
-    summary_path = Path.cwd()/log_dir/time
-    summary_path.mkdir(exist_ok=True, parents=True)
-    with open(summary_path/"config.json", 'w') as f:
-        json.dump(serialize_config(parameter_grid), fp=f, indent=3)
-
-    # save args to json
-    args_dict = serialize_args(args.__dict__) #functions are not serializable
-    with open(summary_path/'args.json', 'w') as f:
-        json.dump(args_dict, f, indent=3)
-
+    log_dir, val_year_end, name, summary_path = \
+        set_tune_log_dir(args, year_idx, time, parameter_grid)
 
     tune_search = TuneGridSearchCV(
         clf,
         parameter_grid,
         cv=train_val_split,
-        early_stopping=True, # early stopping of ASHA
-        max_iters=args.max_iters,
+        early_stopping=True, # early stopping with ASHA
+        max_iters=args.max_iters, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         refit="balanced_accuracy",
         n_jobs=args.n_jobs, #how many trials in parallel
@@ -74,12 +60,28 @@ def sk_run(args, year_idx, time, ckpt_path, config):
     end = t.time()
     print("Tune GridSearch Fit Time:", end - start)
     
-    
+    # Get best scores of gridsearch in a dict.
     best_result = get_best_score(tune_search)
-    config = tune_search.best_params_
+    best_config = tune_search.best_params_
+
+    # Loop Path for best_config and prediction.csv.
+    loop_path = Path(Path.cwd(), log_dir, name)
+
+    # Add config to val_summary and save best config as .json.
+    best_result.update(best_config)
+    with open(loop_path/"best_config.json", 'w') as f:
+        json.dump(serialize_config(best_config), fp=f, indent=3)
+
+    if not args.no_predict:
+        # Automatically predicts with best (refitted) estimator of GridSearchCV
+        preds = tune_search.predict(data.X_test)
+        preds_df = pd.DataFrame(preds, columns=["pred"])
+        test_year_end = val_year_end + args.test_length
+        # Prediction directory path.
+        save_to_dir = loop_path/f"prediction{test_year_end}.csv"
+        preds_df.to_csv(save_to_dir, index_label="id")
 
     return best_result, summary_path, ckpt_path, config 
-
 
 
 def load_skmodel_and_param(args, data):
@@ -91,14 +93,13 @@ def load_skmodel_and_param(args, data):
         raise NotImplementedError("Sk model not implemented.")
 
 
-
 def load_lin(args, data):
     """Load logistic regression and corresponding parameter grid"""
     
-    # scaling is needed in log. reg.
+    # Scaling is needed in log. reg.
     scaler = StandardScaler()
 
-    # pca
+    # Dimension reduction.
     pca = PCA(random_state=args.seed)
 
     clf = SGDClassifier(
@@ -125,6 +126,7 @@ def load_lin(args, data):
 
     # Example parameters to tune from SGDClassifier
     parameter_grid = {
+        # Dont change loss.
         "clf__loss": [args.loss], #logloss (Log Reg.) or hinge (linear SVM)
         "clf__alpha": [1e-6, 1e-3, 1, 100, 10000],
     }
@@ -135,7 +137,6 @@ def load_lin(args, data):
 
     
     return clf, parameter_grid
-
 
 
 def load_svm(args, data):
