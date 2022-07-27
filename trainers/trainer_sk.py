@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 import pdb
+from shutil import rmtree
+from joblib import Memory
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import SGDClassifier
@@ -45,7 +47,7 @@ def sk_run(args, year_idx, time, ckpt_path, config):
         parameter_grid,
         cv=train_val_split,
         early_stopping=True, # early stopping with ASHA
-        max_iters=args.max_iters, # overrules max_iter of SGD classifiers
+        max_iters=args.max_epochs, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         refit="balanced_accuracy",
         n_jobs=args.n_jobs, #how many trials in parallel
@@ -80,6 +82,9 @@ def sk_run(args, year_idx, time, ckpt_path, config):
         # Prediction directory path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_df.to_csv(save_to_dir, index_label="id")
+
+    # memory.clear(warn=False)
+    # rmtree("cachedir")
 
     return best_result, summary_path, ckpt_path, config 
 
@@ -152,8 +157,8 @@ def load_svm(args, data):
     nystroem = Nystroem(
         # gamma=0.2, 
         random_state=args.seed, 
-        n_components=100, #default 100 
-        n_jobs=-1
+        # n_components=100, #default 100 
+        # n_jobs=-1 # default 1 seems to be faster?
     )
 
     clf = SGDClassifier(
@@ -171,7 +176,13 @@ def load_svm(args, data):
     else:
         pipe = [('scaler', scaler), ('nystroem', nystroem), ('clf', clf)]
 
-    clf = Pipeline(pipe)
+    # location = "cachedir"
+    # memory = Memory(location=location, verbose=10)
+
+    clf = Pipeline(
+        pipe,
+        # memory=memory,
+        )
 
     # Example parameters to tune from SGDClassifier
     parameter_grid = {

@@ -100,6 +100,7 @@ def inner_xgb_tune(config, args, data, year_idx, ckpt_path):
         callbacks=[es, tc],
         custom_metric=bal_acc_xgb, #custom balanced acc. metric
         xgb_model=ckpt_path, #if args.refit=True, this is best model of previous loop
+        num_boost_round=args.max_epochs, # num boost round should equal ASHA max_t
     )
     
     return results
@@ -138,7 +139,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
 
     # This will enable aggressive early stopping of bad trials.
     scheduler = ASHAScheduler(
-        max_t=10,  # 10 training iterations
+        max_t=args.max_epochs,
         grace_period=1,
         reduction_factor=2)
     
@@ -151,6 +152,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                                                 year_idx=year_idx,
                                                 ckpt_path=ckpt_path,
                                                 )
+    resources_per_trial = {"cpu": 8, "gpu": args.gpus_per_trial}
     
     log_dir, val_year_end, name, summary_path = \
         set_tune_log_dir(args, year_idx, time, search_space)
@@ -161,9 +163,9 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         metric="val_logloss", #TuneReportChkptCallback redefined names
         mode="min",
         # You can add "gpu": 0.1 to allocate GPUs.
-        resources_per_trial={"cpu": 4},
+        resources_per_trial=resources_per_trial,
         config=search_space,
-        num_samples=10,
+        num_samples=args.num_samples,
         scheduler=scheduler,
         progress_reporter=reporter,
         name=name,

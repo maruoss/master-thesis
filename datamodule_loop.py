@@ -165,10 +165,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("DataModule for Lightning")
-        parser.add_argument("--dataset", type=str, default="small")
         parser.add_argument("--batch_size", type=int, default=512)
-        parser.add_argument("--label_fn", type=str, default="binary", 
-                            choices=["binary", "multi"])
 
         return parent_parser
 
@@ -323,9 +320,6 @@ class Dataset():
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("Dataset for Scikitlearn + xgboost")
-        parser.add_argument("--dataset", type=str, default="small")
         # parser.add_argument("--batch_size", type=int, default=512)
-        parser.add_argument("--label_fn", type=str, default="binary", 
-                            choices=["binary", "multi"])
 
         return parent_parser
