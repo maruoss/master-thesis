@@ -106,14 +106,14 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     print("Fitting the model...")
     if args.refit and ckpt_path is not None:
         print(f"Loading model from path at {ckpt_path}")
-        # class weights from this loop have to be used
+        # Class weights from this loop have to be used.
         model = FFN.load_from_checkpoint(ckpt_path, class_weights=dm.class_weights)
     trainer.fit(model=model, datamodule=dm)
 
     print("Save validation metrics of best model...")
-    # will log to tensorboard of trainer.fit results -> last iteration
+    # Will log to tensorboard of trainer.fit results -> last iteration.
     val_results = trainer.validate(ckpt_path="best", datamodule=dm)[0] #is a list
-    # new ckpt path
+    # New ckpt path.
     if args.refit:
         ckpt_path = checkpoint_callback.best_model_path
 
@@ -123,14 +123,14 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
         preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
         preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
         test_year_end = val_year_end + args.test_length
-        # prediction path
+        # Prediction path.
         save_to_dir = Path(Path.cwd(),log_dir, name, version, f"prediction{test_year_end}.csv")
         preds_argmax_df.to_csv(save_to_dir, index_label="id")
 
     # val summary path
     summary_path = Path(Path.cwd(), log_dir, name)
 
-    # Rename metric names to align with tune
+    # Rename metric names to align with tune.
     val_results["val_acc"] = val_results.pop("acc/val")
     val_results["val_bal_acc"] = val_results.pop("bal_acc/val")
     val_results["val_loss"] = val_results.pop("loss/val_loss")
@@ -142,7 +142,7 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
 # ***********************************************************************************
 
 def inner_nn_tune(config, args, year_idx, ckpt_path):
-    # needed for reproducibility, will seed trainer (init of weights in NN?)
+    # Needed for reproducibility, will seed trainer (init of weights in NN, ...).
     pl.seed_everything(args.seed, workers=True)
 
     dm = MyDataModule_Loop(
@@ -276,7 +276,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                                                     year_idx=year_idx,
                                                     ckpt_path=ckpt_path,
                                                    )
-    resources_per_trial = {"cpu": 1, "gpu": args.gpus_per_trial}
+    resources_per_trial = {"cpu": 8, "gpu": args.gpus_per_trial}
 
     log_dir, val_year_end, name, summary_path = set_tune_log_dir(args, year_idx, time, config)
 
@@ -346,6 +346,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         trainer = pl.Trainer(
             deterministic=True,
             gpus=args.gpus_per_trial,
+            logger=False, #deactivate logging for prediction
         )
         # predict
         preds = trainer.predict(model=model, datamodule=dm)
