@@ -20,9 +20,12 @@ dependencies:
   - torchvision
   - pytorch-lightning
   - tensorboard
-<<<<<<< HEAD
   - ipywidgets
   - flake8
+=======
+  - pip:
+    # - click==8.0.4
+    # - distlib==0.3.4
     # - filelock==3.7.1
     # - msgpack==1.0.4
     # - platformdirs==2.5.2
