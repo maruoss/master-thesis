@@ -20,9 +20,6 @@ dependencies:
   - torchvision
   - pytorch-lightning
   - tensorboard
-  - ipywidgets
-  - flake8
-=======
   - pip:
     # - click==8.0.4
     # - distlib==0.3.4
