@@ -1,0 +1,5 @@
+# 1. "conda env export --from-history > environment.yml"
+# 2. Then add pip libraries manually from  "conda env export > environment.yml"
+# 3. Add -pytorch to channels, otherwise ResolvePackageNotFound will occur...
+# 4. Add -pytorch to top, then -defaults, then -conda-forge. Only then it worked
+#    on the server.

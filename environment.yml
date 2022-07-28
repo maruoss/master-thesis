@@ -1,11 +1,8 @@
-# 1. "conda env export --from-history > environment.yml"
-# 2. Then add pip libraries manually from  "conda env export > environment.yml"
-# 3. Add -pytorch to channels, otherwise ResolvePackageNotFound will occur...
 name: masterthesis
 channels:
-  - conda-forge
-  - defaults
   - pytorch
+  - defaults
+  - conda-forge
 dependencies:
   - python=3.8.5
   - pandas
@@ -21,16 +18,8 @@ dependencies:
   - pytorch-lightning
   - tensorboard
   - pip:
-    # - click==8.0.4
-    # - distlib==0.3.4
-    # - filelock==3.7.1
-    # - msgpack==1.0.4
-    # - platformdirs==2.5.2
     - pyarrow==8.0.0
     - ray==1.13.0
-    # - tabulate==0.8.10
-    # - tensorboardx==2.5.1
     - tune-sklearn==0.4.3
-    # - virtualenv==20.15.1
     - xgboost==1.6.1
 prefix: C:\Users\Mathiass\Anaconda3\envs\masterthesis
