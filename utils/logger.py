@@ -1,4 +1,4 @@
-
+import pathlib
 import pdb
 
 
@@ -86,6 +86,8 @@ def serialize_args(args_dict: dict):
     for k, v in args_dict.items():
         if callable(v): # if arg is a function (old behavior of train and tune)
             dict_to_serialize[k] = v.__name__
+        elif isinstance(v, pathlib.PurePath):
+            dict_to_serialize[k] = str(v) # if path is Pathlib object, take string
         else:
             dict_to_serialize[k] = v
 

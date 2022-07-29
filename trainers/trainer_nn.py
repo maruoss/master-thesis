@@ -268,7 +268,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         parameter_columns=["hidden_dim", "lr", "batch_size"],
         metric_columns=["train_loss", "val_loss", "val_bal_acc", "mean_pred", 
                         "training_iteration"],
-        max_report_frequency=60, 
+        max_report_frequency=120, 
         print_intermediate_tables=True
     )
     train_fn_with_parameters = tune.with_parameters(inner_nn_tune,

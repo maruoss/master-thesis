@@ -82,11 +82,15 @@ if __name__ == "__main__":
     load_args(locals()[f"parser_{args_.mode}"], 
                 args_.mode, args_.model)
     
+    # Set current working directory. Used in default --path_data.
+    cwd = Path.cwd()
+
     # Set general model agnostic hyperparams.
     cockpit = parser.add_argument_group("Loop Configuration")
     cockpit.add_argument("--seed", type=int, default=42)
-    cockpit.add_argument("--path_data", type=str, default= r"C:\Users\Mathiass\OneDrive - Universität Zürich UZH\Documents\mt_literature\data")
-    cockpit.add_argument("--dataset", type=str, default="small")
+    cockpit.add_argument("--path_data", type=str, default= cwd/"data")
+    cockpit.add_argument("--dataset", type=str, default="small",
+                            choices=["small", "medium", "big"])
     cockpit.add_argument("--init_train_length", type=int, default=10)
     cockpit.add_argument("--val_length", type=int, default=2)
     cockpit.add_argument("--test_length", type=int, default=1)

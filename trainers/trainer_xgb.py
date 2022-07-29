@@ -143,7 +143,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         grace_period=1,
         reduction_factor=2)
     
-    reporter = CLIReporter(max_report_frequency=60, 
+    reporter = CLIReporter(max_report_frequency=120, 
                             print_intermediate_tables=True)
 
     train_fn_with_parameters = tune.with_parameters(inner_xgb_tune,

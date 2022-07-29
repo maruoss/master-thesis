@@ -9,7 +9,7 @@ from pandas.tseries.offsets import MonthEnd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import make_column_transformer
 
-from utils import add_sic_manually
+from sic_codes import add_sic_manually
 
 
 def prepare_dataset(args):
