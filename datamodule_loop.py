@@ -6,7 +6,7 @@ import torch
 from utils.preprocess import CVSplitter, binary_categorize, feature_engineer, multi_categorize
 from torch.utils.data import TensorDataset, DataLoader
 import pytorch_lightning as pl
-import pathlib
+from pathlib import Path
 import pdb
 from sklearn.utils.class_weight import compute_class_weight
 
@@ -27,13 +27,8 @@ class MyDataModule_Loop(pl.LightningDataModule):
         self.save_hyperparameters(ignore=["path"])
         
         # read data from disk
-        path = pathlib.Path(path)
-        if dataset == "small":
-            self.data = pd.read_parquet(path/"final_df_filledmean_small.parquet")
-        elif dataset == "big":
-            self.data = pd.read_parquet(path/"final_df_filledmean.parquet")
-        else:
-            raise ValueError("Specify dataset as either 'small' or 'big'")
+        path = Path(path)
+        self.data = load_data(path, dataset)
 
         # get splits
         splitter = CVSplitter(self.data["date"], init_train_length=init_train_length, 
@@ -185,13 +180,8 @@ class Dataset():
                 ):
 
         # read data from disk
-        path = pathlib.Path(path)
-        if dataset == "small":
-            self.data = pd.read_parquet(path/"final_df_filledmean_small.parquet")
-        elif dataset == "big":
-            self.data = pd.read_parquet(path/"final_df_filledmean.parquet")
-        else:
-            raise ValueError("Specify dataset as either 'small' or 'big'")
+        path = Path(path)
+        self.data = load_data(path, dataset)
 
         # get splits
         splitter = CVSplitter(self.data["date"], init_train_length=init_train_length, 
@@ -323,3 +313,15 @@ class Dataset():
         # parser.add_argument("--batch_size", type=int, default=512)
 
         return parent_parser
+
+
+def load_data(path: Path, dataset: str):
+    """Loads dataset from path, depending on specified size."""
+    if dataset == "small":
+        return pd.read_parquet(path/"final_df_small.parquet")
+    elif dataset == "medium":
+        return pd.read_parquet(path/"final_df_med_fillmean.parquet")
+    elif dataset == "big":
+        return pd.read_parquet(path/"final_df_big_fillmean.parquet")
+    else:
+        raise ValueError("Specify dataset as either 'small' or 'big'")
