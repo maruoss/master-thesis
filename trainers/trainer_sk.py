@@ -187,7 +187,8 @@ def load_svm(args, data):
     # Example parameters to tune from SGDClassifier
     parameter_grid = {
         "clf__alpha": [1e-6, 1e-3, 1, 100, 10000],
-        "nystroem__n_components": [150, 300], # the higher the better the approx.
+        "nystroem__n_components": [50], # the higher the better the approx.
+        # 100 or 150 will OOM even on remote server...
     }
     if args.pca and args.dataset=="small":
         parameter_grid["pca__n_components"] = [None, 50, 100] # None equals no PCA

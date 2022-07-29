@@ -34,9 +34,20 @@ def bal_acc_xgb(preds: np.ndarray, dtrain: xgb.DMatrix) -> Tuple[str, float]:
     return 'val_bal_acc', val_bal_acc
 
 
-def inner_xgb_tune(config, args, data, year_idx, ckpt_path):
+def inner_xgb_tune(config, args, year_idx, ckpt_path):
     # pl.seed_everything(42, workers=True) #not needed, as long as 'seed' speficied
 
+    # Important: Load dataset inside inner loop. Otherwise, ray will not have
+    # enough memory!.
+    data = Dataset(
+        path=args.path_data,
+        year_idx=year_idx,
+        dataset=args.dataset,
+        # batch_size=args.batch_size,
+        init_train_length=args.init_train_length,
+        val_length=args.val_length,
+        label_fn=args.label_fn,
+    )
     # Get datasets from data.
     X_train, X_val, y_train, y_val = data.get_train_val()
 
@@ -106,16 +117,7 @@ def inner_xgb_tune(config, args, data, year_idx, ckpt_path):
     return results
 
 def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
-    # Load dataset in outer loop first to get number of classes for search_space.
-    data = Dataset(
-        path=args.path_data,
-        year_idx=year_idx,
-        dataset=args.dataset,
-        # batch_size=args.batch_size,
-        init_train_length=args.init_train_length,
-        val_length=args.val_length,
-        label_fn=args.label_fn,
-    )
+
     search_space = {
         # You can mix constants with search space objects.
         "objective": "binary:logistic",
@@ -132,7 +134,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
     if args.label_fn == "multi":
         search_space.update({
             "objective": "multi:softmax",
-            "num_class": data.num_classes,
+            "num_class": 3, #TODO: num_classes args?
             "eval_metric": ["mlogloss", "merror"],
         })
 
@@ -148,11 +150,11 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
 
     train_fn_with_parameters = tune.with_parameters(inner_xgb_tune,
                                                 args=args,
-                                                data=data,
+                                                # data=data, # Dont, ray will OOM!
                                                 year_idx=year_idx,
                                                 ckpt_path=ckpt_path,
                                                 )
-    resources_per_trial = {"cpu": 8, "gpu": args.gpus_per_trial}
+    resources_per_trial = {"cpu": 16, "gpu": args.gpus_per_trial}
     
     log_dir, val_year_end, name, summary_path = \
         set_tune_log_dir(args, year_idx, time, search_space)
@@ -208,6 +210,16 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                         "checkpoint")
     
     if not args.no_predict:
+        # Load dataset here, need X_test data.
+        data = Dataset(
+            path=args.path_data,
+            year_idx=year_idx,
+            dataset=args.dataset,
+            # batch_size=args.batch_size,
+            init_train_length=args.init_train_length,
+            val_length=args.val_length,
+            label_fn=args.label_fn,
+        )
         # Load best model.
         best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1],
                         "checkpoint")
