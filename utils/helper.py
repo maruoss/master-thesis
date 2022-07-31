@@ -1,4 +1,5 @@
 
+from datetime import datetime
 import json
 from pathlib import Path
 import pandas as pd
@@ -6,7 +7,7 @@ from utils.logger import serialize_args, serialize_config
 
 
 def summary_to_csv(collect:dict, summary_path: Path):
-    """nested dict of {"year": {"metrics": ...}} to csv"""
+    """Takes a nested dict of {"year": {"metrics": ...}} and saves it to csv."""
     val_summary = pd.DataFrame(collect, index=get_metric_order(collect)) # collect is dict of dict
     val_summary_floats = val_summary.apply(pd.to_numeric, axis=0, errors="coerce")
     val_summary.insert(loc=0, column="std", value=val_summary_floats.std(axis=1))
@@ -26,7 +27,7 @@ def get_metric_order(nested_dic: dict):
 
 
 def get_best_score(gs):
-    """returns best estimator scores of gridsearch.cv_results_ to dictionary"""
+    """Returns best estimator scores of gridsearch.cv_results_ to dictionary"""
     dic = {}
     dic["val_acc"] = gs.cv_results_["mean_test_accuracy"][gs.best_index_]
     dic["val_bal_acc"] = gs.cv_results_["mean_test_balanced_accuracy"][gs.best_index_]
@@ -39,7 +40,7 @@ def get_best_score(gs):
     return dic
 
 def set_tune_log_dir(args, year_idx, time, config):
-    """set up paths and save config and args there"""
+    """Set up paths and save config and args there"""
     # Set logging directory for tune.run
     log_dir = f"./logs/tune/{args.model}_loops"
     # name = time+"_"+string_from_config(config) # config into path 
@@ -61,3 +62,28 @@ def set_tune_log_dir(args, year_idx, time, config):
         json.dump(args_dict, f, indent=3)
         
     return log_dir, val_year_end, name, summary_path
+
+
+def save_time(start_time: datetime):
+    """Given a starttime, returns a dictionary with the time it took until now.
+    
+    Args:
+    start_time: datetime object
+
+    Returns:
+    time_dict: dictionary
+    """
+    time_dict = {}
+    day_sec = 24 * 60 * 60
+    hour_sec = 60 * 60
+    end_time = datetime.now()
+    t = (end_time - start_time).total_seconds()
+    days, rem = divmod(t, day_sec)
+    hours, rem = divmod(rem, hour_sec)
+    min, sec = divmod(rem, 60)
+    time_dict["D"] = days
+    time_dict["H"] = hours
+    time_dict["M"] = min
+    time_dict["S"] = sec
+    return time_dict
+

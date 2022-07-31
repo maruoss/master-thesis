@@ -6,14 +6,28 @@ import pandas as pd
 from pytorch_lightning import seed_everything
 from argparse import ArgumentParser
 from trainers.trainer_xgb import xgb_tune
-from utils.helper import summary_to_csv
+from utils.helper import save_time, summary_to_csv
 from trainers.trainer_sk import sk_run
 from utils.arguments import load_args
 from trainers.trainer_nn import nn_train, nn_tune
 
 
 def run(args, year_idx, time, ckpt_path, config):
-    """Run the specified model and return dictionaries and path for next loop."""
+    """Run a model for one train/val split and return output for the next loop.
+    
+        Arguments:
+            args (Namespace):   Input parameters
+            year_idx (int):     Loop index
+            time (datetime):    Start_time for folder name
+            ckpt_path (Path):   Path of best checkpoint
+            config (dict):      Config of best checkpoint
+
+        Returns:
+            best_result (dict): Metrics dictionary of best results
+            summary_path (Path):Where summary should be saved
+            ckpt_path (Path):   Where best model is saved
+            config (dict):      Config of best model
+    """
     fun_dict = {
                 "nn_train": nn_train, 
                 "nn_tune": nn_tune, 
@@ -29,10 +43,12 @@ def run(args, year_idx, time, ckpt_path, config):
     return best_result, summary_path, ckpt_path, config
 
 def looper(args):
-    """Loop over all train, val splits: 1996 - 2021 = 26 years in total."""
+    """Main runner. Loops over specified train/ val splits and saves results."""
     # time for folder name
-    time = datetime.now().strftime("%Y%m%d%H%M%S")
+    start_time = datetime.now()
+    time = start_time.strftime("%Y%m%d%H%M%S")
     collect = {} # collect val metrics for final csv summary
+    time_collect = {} # collect duration for each loop and save at the end
     val_year_start = 1996 + args.init_train_length
     val_year_end = val_year_start + args.val_length - 1
     best_ckpt_path = None # for both train and tune
@@ -44,13 +60,20 @@ def looper(args):
         best_ckpt_path, \
         best_config, \
         = run(args, year_idx, time, best_ckpt_path, best_config)
+        time_collect[f"loop_{year_idx}"] = save_time(start_time)
 
-    # calculate mean, std and save to .csv
+    # Calculate metrics and save to .csv.
     summary_to_csv(collect, summary_path)
+    end_time = datetime.now()
+    # Save time dictionary to csv.
+    time_collect["Total Time"] = save_time(start_time)
+    time_collect_df = pd.DataFrame(time_collect).T
+    time_collect_df.to_csv(Path(summary_path,"time.csv"))
+    print(f"Finished. Completed in {(end_time - start_time).total_seconds()} seconds.")
 
 def add_stress_test_param(args):
     """Stress test model with args that give largest dataset."""
-    # Get dictionary of args.
+    # Get args as a dictionary.
     d = vars(args)
     # One loop of maximum data size. Can edit args via dictionary.
     d["init_train_length"] = 26 - args.val_length - args.test_length
@@ -62,8 +85,9 @@ def add_stress_test_param(args):
 if __name__ == "__main__":
 
     parser = ArgumentParser(description=
-    "Master Thesis Mathias Ruoss - Option Return Classification: "
-    "Loop over all train, val splits and predict on test set for given model.")
+        "Master Thesis Mathias Ruoss - Option Return Classification: "
+        "Loop over all train, val splits and predict on test set for given model."
+    )
     subparsers = parser.add_subparsers()
 
     # Define subparser level arguments.
