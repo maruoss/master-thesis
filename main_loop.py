@@ -128,7 +128,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--stress_test", action="store_true")
     # Tune configuration
     cockpit = parser.add_argument_group("Tune Configuration")
-    cockpit.add_argument("--num_samples", type=int, default=1)
+    cockpit.add_argument("--num_samples", type=int, default=20)
     cockpit.add_argument("--gpus_per_trial", type=int, default=1)
     # ASHA
     cockpit.add_argument("--grace_period", type=int, default=1)
