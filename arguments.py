@@ -1,20 +1,16 @@
-
-
 from datamodule_loop import Dataset, MyDataModule_Loop
 from model.neuralnetwork import FFN
 
 import pdb
 
+
 def load_args(parser, mode: str, model: str):
     """load arguments for respective mode and model"""
     # pdb.set_trace()
     globals()[f"args_{model}"](parser)
-    if mode == "tune":
-        globals()[f"args_tune"](parser)
 
 
 def args_nn(parser_train):
-
     # Logger
     group = parser_train.add_argument_group("Logging Configuration")
     group.add_argument("--tag", type=str, default='')
@@ -23,7 +19,7 @@ def args_nn(parser_train):
     group = parser_train.add_argument_group("Early Stopping Configuration")
     # group.add_argument("--monitor", type=str, default="loss/val_loss")
     # group.add_argument("--es_mode", type=str, default="min")
-    group.add_argument("--patience", type=int, default=3, 
+    group.add_argument("--patience", type=int, default=10, 
                         help="number of bad epochs before stop")
 
     # ModelCheckpoint
@@ -77,7 +73,6 @@ def args_svm(parser_train):
     group.add_argument("--n_jobs", type=int, default=1) #how many trials in parallel
 
 
-
 def args_xgb(parser_train):
 
     # Dataset args
@@ -87,19 +82,5 @@ def args_xgb(parser_train):
     group = parser_train.add_argument_group("Early Stopping Configuration")
     # group.add_argument("--monitor", type=str, default="loss/val_loss")
     # group.add_argument("--es_mode", type=str, default="min")
-    group.add_argument("--patience", type=int, default=3, 
+    group.add_argument("--patience", type=int, default=32, 
                             help="number of bad epochs before stop")
-
-
-# Additional arguments for tune, see load_args function
-def args_tune(parser_tune):
-
-    # Tune configuration
-    group = parser_tune.add_argument_group("Tune Configuration")
-    group.add_argument("--num_samples", type=int, default=1)
-    group.add_argument("--gpus_per_trial", type=int, default=1)
-
-    # ASHA scheduler configuration
-    group = parser_tune.add_argument_group("ASHA Configuration")
-    group.add_argument("--grace_period", type=int, default=1)
-    group.add_argument("--reduction_factor", type=int, default=2)

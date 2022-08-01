@@ -8,7 +8,7 @@ from argparse import ArgumentParser
 from trainers.trainer_xgb import xgb_tune
 from utils.helper import save_time, summary_to_csv
 from trainers.trainer_sk import sk_run
-from utils.arguments import load_args
+from arguments import load_args
 from trainers.trainer_nn import nn_train, nn_tune
 
 
@@ -23,10 +23,12 @@ def run(args, year_idx, time, ckpt_path, config):
             config (dict):      Config of best checkpoint
 
         Returns:
+            Tuple(
             best_result (dict): Metrics dictionary of best results
             summary_path (Path):Where summary should be saved
             ckpt_path (Path):   Where best model is saved
             config (dict):      Config of best model
+            )
     """
     fun_dict = {
                 "nn_train": nn_train, 
@@ -124,6 +126,13 @@ if __name__ == "__main__":
     cockpit.add_argument("--no_predict", action="store_true") #default: predict
     cockpit.add_argument("--refit", action="store_true") #default: no refit
     cockpit.add_argument("--stress_test", action="store_true")
+    # Tune configuration
+    cockpit = parser.add_argument_group("Tune Configuration")
+    cockpit.add_argument("--num_samples", type=int, default=1)
+    cockpit.add_argument("--gpus_per_trial", type=int, default=1)
+    # ASHA
+    cockpit.add_argument("--grace_period", type=int, default=1)
+    cockpit.add_argument("--reduction_factor", type=int, default=2)
 
     args = parser.parse_args()
 
