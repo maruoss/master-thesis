@@ -48,7 +48,7 @@ def looper(args):
     """Main runner. Loops over specified train/ val splits and saves results."""
     # time for folder name
     start_time = datetime.now()
-    time = start_time.strftime("%Y%m%d%H%M%S")
+    time = start_time.strftime("%Y%m%d%H%M%S") + args.tag
     collect = {} # collect val metrics for final csv summary in dict
     time_collect = {} # collect duration for each loop and save in dict
     val_year_start = 1996 + args.init_train_length
@@ -113,6 +113,7 @@ if __name__ == "__main__":
 
     # Set general model agnostic hyperparams.
     cockpit = parser.add_argument_group("Loop Configuration")
+    cockpit.add_argument("--tag", type=str, default="")
     cockpit.add_argument("--seed", type=int, default=42)
     cockpit.add_argument("--path_data", type=str, default= cwd/"data")
     cockpit.add_argument("--dataset", type=str, default="small",

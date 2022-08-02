@@ -145,7 +145,6 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
             "eval_metric": ["mlogloss", "merror"],
         })
 
-
     # This will enable aggressive early stopping of bad trials.
     scheduler = ASHAScheduler(
         max_t=args.max_epochs,
