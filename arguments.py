@@ -11,16 +11,13 @@ def load_args(parser, mode: str, model: str):
 
 
 def args_nn(parser_train):
-    # Logger
-    group = parser_train.add_argument_group("Logging Configuration")
-    group.add_argument("--tag", type=str, default='')
-
     # EarlyStopping
     group = parser_train.add_argument_group("Early Stopping Configuration")
     # group.add_argument("--monitor", type=str, default="loss/val_loss")
     # group.add_argument("--es_mode", type=str, default="min")
-    group.add_argument("--patience", type=int, default=10, 
-                        help="number of bad epochs before stop")
+    group.add_argument("--patience", type=int, default=5, #check check_val_every
+                        help="number of bad validation epochs before stop, depends "
+                        "on 'check_val_every' parameter as well")
 
     # ModelCheckpoint
     # group = parser.add_argument_group("Model Checkpoint Configuration")
@@ -38,13 +35,12 @@ def args_nn(parser_train):
 
     # trainer
     group = parser_train.add_argument_group("Training Configuration")
-    # group.add_argument("--max_epochs", type=int, default=2) #moved to main_loop
-    group.add_argument("--check_val_every", type=int, default=1)
+    group.add_argument("--max_epochs", type=int, default=100)
+    group.add_argument("--check_val_every", type=int, default=10)
     # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
 
 def args_lin(parser_train):
-
     # Dataset args
     group = Dataset.add_model_specific_args(parser_train)
 
@@ -54,12 +50,11 @@ def args_lin(parser_train):
     group.add_argument("--pca", action="store_true")
 
     group = parser_train.add_argument_group("Sklearn Tune Configuration")
-    # group.add_argument("--max_iters", type=int, default=10) #moved to main_loop as max_epochs
-    group.add_argument("--n_jobs", type=int, default=1) #how many trials in parallel
+    group.add_argument("--max_iters", type=int, default=1000) #moved to main_loop as max_epochs
+    group.add_argument("--n_jobs", type=int, default=2) #how many trials in parallel
 
 
 def args_svm(parser_train):
-
     # Dataset args
     group = Dataset.add_model_specific_args(parser_train)
 
@@ -69,12 +64,11 @@ def args_svm(parser_train):
     group.add_argument("--pca", action="store_true")
 
     group = parser_train.add_argument_group("Sklearn Tune Configuration")
-    # group.add_argument("--max_iters", type=int, default=10)  #moved to main_loop as max_epochs
-    group.add_argument("--n_jobs", type=int, default=1) #how many trials in parallel
+    group.add_argument("--max_iters", type=int, default=1000) #moved to main_loop as max_epochs
+    group.add_argument("--n_jobs", type=int, default=2) #how many trials in parallel
 
 
 def args_xgb(parser_train):
-
     # Dataset args
     group = Dataset.add_model_specific_args(parser_train)
 
@@ -84,3 +78,6 @@ def args_xgb(parser_train):
     # group.add_argument("--es_mode", type=str, default="min")
     group.add_argument("--patience", type=int, default=32, 
                             help="number of bad epochs before stop")
+
+    group = parser_train.add_argument_group("Training Configuration")
+    group.add_argument("--max_iters", type=int, default=1000)  #moved to main_loop as max_epochs

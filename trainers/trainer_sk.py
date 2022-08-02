@@ -47,7 +47,7 @@ def sk_run(args, year_idx, time, ckpt_path, config):
         parameter_grid,
         cv=train_val_split,
         early_stopping=True, # early stopping with ASHA
-        max_iters=args.max_epochs, # overrules max_iter of SGD classifiers
+        max_iters=args.max_iters, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         refit="balanced_accuracy",
         n_jobs=args.n_jobs, #how many trials in parallel

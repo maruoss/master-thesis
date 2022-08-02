@@ -111,7 +111,7 @@ def inner_xgb_tune(config, args, year_idx, ckpt_path):
         callbacks=[es, tc],
         custom_metric=bal_acc_xgb, #custom balanced acc. metric
         xgb_model=ckpt_path, #if args.refit=True, this is best model of previous loop
-        num_boost_round=args.max_epochs, # num boost round should equal ASHA max_t
+        num_boost_round=args.max_iters, # num boost round should equal ASHA max_t
     )
     
     return results
@@ -147,7 +147,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
 
     # This will enable aggressive early stopping of bad trials.
     scheduler = ASHAScheduler(
-        max_t=args.max_epochs,
+        max_t=args.max_iters,
         grace_period=1,
         reduction_factor=2)
     
