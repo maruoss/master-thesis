@@ -68,7 +68,7 @@ def looper(args):
     summary_to_csv(collect, summary_path)
     end_time = datetime.now()
     # Save time dictionary to csv.
-    time_collect["Total Time"] = save_time(start_time)
+    time_collect["Total Time"] = save_time(start_time)[0] #returns tuple
     time_collect_df = pd.DataFrame(time_collect).T
     time_collect_df.to_csv(Path(summary_path,"time.csv"))
     print(f"Finished. Completed in {(end_time - start_time).total_seconds()} seconds.")
