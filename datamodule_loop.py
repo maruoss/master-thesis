@@ -137,6 +137,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
+                         shuffle=True, #shuffle training data
                          )
 
     def val_dataloader(self):
@@ -144,6 +145,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
+                         shuffle=False,
                          )
 
     def test_dataloader(self):
@@ -151,6 +153,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
+                         shuffle=False,
                          )
 
     def predict_dataloader(self):
@@ -158,13 +161,13 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=len(self.X_test), #load the whole testset
                     num_workers=4,
                     pin_memory=True,
+                    shuffle=False,
                     )
 
     @staticmethod
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("DataModule for Lightning")
         parser.add_argument("--batch_size", type=int, default=512)
-
         return parent_parser
 
 
@@ -301,8 +304,9 @@ class Dataset():
         y = np.concatenate((self.y_train, self.y_val))
         ps = PredefinedSplit(np.concatenate((np.zeros(len(self.X_train)) - 1, np.ones(len(self.X_val)))))
         
-        assert (self.X_train.shape[0] + self.X_val.shape[0] == X.shape[0] and (self.X_train.shape[1] == self.X_val.shape[1] == X.shape[1]))
-        assert ps.get_n_splits() == 1, "more than one train/ val split in PredefinedSplit"
+        assert (self.X_train.shape[0] + self.X_val.shape[0] == X.shape[0] and 
+                (self.X_train.shape[1] == self.X_val.shape[1] == X.shape[1]))
+        assert ps.get_n_splits() == 1, "no more than one train/ val split in PredefinedSplit"
         
         return X, y, ps
 
@@ -317,7 +321,6 @@ class Dataset():
     def add_model_specific_args(parent_parser):
         parser = parent_parser.add_argument_group("Dataset for Scikitlearn + xgboost")
         # parser.add_argument("--batch_size", type=int, default=512)
-
         return parent_parser
 
 
