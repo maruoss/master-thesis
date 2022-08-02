@@ -131,10 +131,17 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         "eta": tune.loguniform(1e-4, 1e-1),
     }
 
-    if args.label_fn == "multi":
+    # In xgb, we have to specify num_classes in advance.
+    if args.label_fn == "multi3":
         search_space.update({
             "objective": "multi:softmax",
-            "num_class": 3, #TODO: num_classes args?
+            "num_class": 3,
+            "eval_metric": ["mlogloss", "merror"],
+        })
+    elif args.label_fn == "multi5":
+        search_space.update({
+            "objective": "multi:softmax",
+            "num_class": 5,
             "eval_metric": ["mlogloss", "merror"],
         })
 

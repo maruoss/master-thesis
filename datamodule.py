@@ -37,8 +37,10 @@ class MyDataModule(pl.LightningDataModule):
         # make classification problem
         if label_fn == "binary":
             self.y = self.y.apply(binary_categorize)
-        elif label_fn == "multi":
-            self.y = self.y.apply(multi_categorize)
+        elif label_fn == "multi3":
+            self.y = self.y.apply(multi_categorize, classes=3)
+        elif label_fn == "multi5":
+            self.y = self.y.apply(multi_categorize, classes=5)
         else:
             raise ValueError("Specify label_fn as either 'binary' or 'multi'")
         # create X

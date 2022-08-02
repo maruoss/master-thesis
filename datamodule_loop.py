@@ -50,8 +50,10 @@ class MyDataModule_Loop(pl.LightningDataModule):
         # make classification problem
         if label_fn == "binary":
             self.y = self.y.apply(binary_categorize)
-        elif label_fn == "multi":
-            self.y = self.y.apply(multi_categorize)
+        elif label_fn == "multi3":
+            self.y = self.y.apply(multi_categorize, classes=3)
+        elif label_fn == "multi5":
+            self.y = self.y.apply(multi_categorize, classes=5)
         else:
             raise ValueError("Specify label_fn as either 'binary' or 'multi'")
         # create X
@@ -106,6 +108,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         print("*****************************************************************************************")
         print("Current TORCH dataset information:")
         print("---")
+        print("class counts: ", self.y_train.unique(return_counts=True))
         print("class_weights:", self.class_weights)
         print("device of class_weights:", self.class_weights.device)
         print("---")
@@ -203,8 +206,10 @@ class Dataset():
         # make classification problem
         if label_fn == "binary":
             self.y = self.y.apply(binary_categorize)
-        elif label_fn == "multi":
-            self.y = self.y.apply(multi_categorize)
+        elif label_fn == "multi3":
+            self.y = self.y.apply(multi_categorize, classes=3)
+        elif label_fn == "multi5":
+            self.y = self.y.apply(multi_categorize, classes=5)
         else:
             raise ValueError("Specify label_fn as either 'binary' or 'multi'")
         # create X
@@ -269,6 +274,7 @@ class Dataset():
         print("*****************************************************************************************")
         print("Current NUMPY dataset information:")
         print("---")
+        print("class counts: ", np.unique(self.y_train, return_counts=True))
         print("class_weights:", self.class_weights)
         print("---")
         print(f"# of input data: {len(self.data)} with shape: {self.data.shape}")

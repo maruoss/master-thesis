@@ -121,7 +121,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--val_length", type=int, default=2)
     cockpit.add_argument("--test_length", type=int, default=1)
     cockpit.add_argument("--label_fn", type=str, default="binary", 
-                            choices=["binary", "multi"])
+                            choices=["binary", "multi3", "multi5"])
     cockpit.add_argument("--max_epochs", type=int, default=100) #max_iters for lin, svm, xgb
     cockpit.add_argument("--no_predict", action="store_true") #default: predict
     cockpit.add_argument("--refit", action="store_true") #default: no refit

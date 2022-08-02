@@ -36,7 +36,7 @@ def feature_engineer(data):
     return data
 
 
-# binary y label generator
+# Binary y label generator.
 def binary_categorize(y):
     """
     Input: continuous target variable 
@@ -50,20 +50,40 @@ def binary_categorize(y):
         return 0
 
 
-# multiclass y label generator
-def multi_categorize(y):
+# Multiclass y label generator.
+def multi_categorize(y: float, classes:int):
     """
-    Input: continuous target variable
-    CAREFUL: classes have to be between [0, C) for F.crossentropyloss.
-    
-    Output: multi class
+    Creates categorical labels from continuous values.
+
+        Args:
+            y (float):      continuous target variable (option return)
+            classes (int):  number of classes to create
+        Returns:
+            (int):          class assignment
+        CAREFUL: classes have to be between [0, C) for F.crossentropyloss.
     """
-    if y > 0.05:
-        return 2
-    elif y < -0.05:
-        return 0
+    if classes == 3:
+        # thresholds: +/- 5%
+        if y > 0.05:
+            return 2
+        elif y < -0.05:
+            return 0
+        else:
+            return 1
+    elif classes == 5:
+        # thresholds: +/- 2.5% and +/- 5%
+        if y > 0.05:
+            return 4
+        elif (y > 0.025 and y <= 0.05):
+            return 3
+        elif (y >= -0.05 and y < -0.025):
+            return 1
+        elif (y < -0.05):
+            return 0
+        else:
+            return 2
     else:
-        return 1
+        raise ValueError("Only multi for 3 or 5 classes implemented right now.")
 
 
 # create gridsearch timeseries splits
