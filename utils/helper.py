@@ -84,6 +84,6 @@ def save_time(start_time: datetime):
     time_dict["D"] = days
     time_dict["H"] = hours
     time_dict["M"] = min
-    time_dict["S"] = sec
-    return time_dict
+    time_dict["S"] = round(sec, 2) # round secs to 2 decimals
+    return time_dict, end_time
 

@@ -49,20 +49,20 @@ def looper(args):
     # time for folder name
     start_time = datetime.now()
     time = start_time.strftime("%Y%m%d%H%M%S")
-    collect = {} # collect val metrics for final csv summary
-    time_collect = {} # collect duration for each loop and save at the end
+    collect = {} # collect val metrics for final csv summary in dict
+    time_collect = {} # collect duration for each loop and save in dict
     val_year_start = 1996 + args.init_train_length
     val_year_end = val_year_start + args.val_length - 1
     best_ckpt_path = None # for both train and tune
     best_config = None # for tune
+    start_loop_time = start_time
     for year_idx in range(27 - (args.init_train_length + args.val_length + args.test_length)):
     # for year_idx in range(1):
-        collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"], \
-        summary_path, \
-        best_ckpt_path, \
-        best_config, \
-        = run(args, year_idx, time, best_ckpt_path, best_config)
-        time_collect[f"loop_{year_idx}"] = save_time(start_time)
+        (collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"],
+        summary_path,
+        best_ckpt_path,
+        best_config) = run(args, year_idx, time, best_ckpt_path, best_config)
+        time_collect[f"loop_{year_idx}"], start_loop_time = save_time(start_loop_time)
 
     # Calculate metrics and save to .csv.
     summary_to_csv(collect, summary_path)
