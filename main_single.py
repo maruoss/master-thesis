@@ -20,7 +20,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 from argparse import ArgumentParser
 
-from datamodule import MyDataModule
+from datamodule_single import MyDataModule
 from model.neuralnetwork import FFN
 from utils.logger import create_foldername
 

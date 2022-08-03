@@ -5,6 +5,7 @@ import pandas as pd
 
 from pytorch_lightning import seed_everything
 from argparse import ArgumentParser
+from trainers.trainer_rf import rf_run
 from trainers.trainer_xgb import xgb_tune
 from utils.helper import save_time, summary_to_csv
 from trainers.trainer_sk import sk_run
@@ -35,6 +36,7 @@ def run(args, year_idx, time, ckpt_path, config):
                 "nn_tune": nn_tune, 
                 "lin_tune": sk_run,
                 "svm_tune": sk_run,
+                "rf_tune": rf_run,
                 "xgb_tune": xgb_tune,
                 }
 
@@ -46,7 +48,7 @@ def run(args, year_idx, time, ckpt_path, config):
 
 def looper(args):
     """Main runner. Loops over specified train/ val splits and saves results."""
-    # time for folder name
+    # Time for logging folder name.
     start_time = datetime.now()
     time = start_time.strftime("%Y%m%d%H%M%S") + args.tag
     collect = {} # collect val metrics for final csv summary in dict
@@ -99,7 +101,7 @@ if __name__ == "__main__":
     parser_tune.set_defaults(mode="tune") # string can also be a function
 
     parser_train.add_argument("model", choices=["nn"])
-    parser_tune.add_argument("model", choices=["nn", "lin", "svm", "xgb"])
+    parser_tune.add_argument("model", choices=["nn", "lin", "svm", "rf", "xgb"])
 
     # Parse mode and model first to determine which args to load in load_args.
     args_, _ = parser.parse_known_args()
