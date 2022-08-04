@@ -133,3 +133,8 @@ dmypy.json
 .vscode
 logs
 lightning_logs
+
+# Ignore data folder
+data/*
+# but no utils subdir with .py files
+!data/utils
