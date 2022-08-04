@@ -48,7 +48,7 @@ def rf_run(args, year_idx, time, ckpt_path, config):
         parameter_grid,
         cv=train_val_split,
         early_stopping=True, # early stopping with ASHA
-        max_iters=args.max_iters, # overrules max_iter of SGD classifiers
+        max_iters=args.n_estimators, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         mode="max",
         refit="balanced_accuracy",

@@ -153,7 +153,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
                          num_workers=4,
                          pin_memory=True,
-                         shuffle=False,
+                         shuffle=False, #must not shuffle here!
                          )
 
     def predict_dataloader(self):
@@ -161,7 +161,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
         return DataLoader(dataset, batch_size=len(self.X_test), #load the whole testset
                     num_workers=4,
                     pin_memory=True,
-                    shuffle=False,
+                    shuffle=False, #must not shuffle here!
                     )
 
     @staticmethod

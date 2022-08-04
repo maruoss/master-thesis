@@ -40,7 +40,7 @@ def run(args, year_idx, time, ckpt_path, config):
                 "xgb_tune": xgb_tune,
                 }
 
-    # no checkpoint here -> no refit possible
+    # If no checkpoint here -> no refit possible.
     best_result, summary_path, ckpt_path, config \
         = fun_dict[f"{args.model}_{args.mode}"](args, year_idx, time, ckpt_path, config)
 
@@ -117,7 +117,7 @@ if __name__ == "__main__":
     cockpit = parser.add_argument_group("Loop Configuration")
     cockpit.add_argument("--tag", type=str, default="")
     cockpit.add_argument("--seed", type=int, default=42)
-    cockpit.add_argument("--path_data", type=str, default= cwd/"data")
+    cockpit.add_argument("--path_data", type=str, default=cwd/"data")
     cockpit.add_argument("--dataset", type=str, default="small",
                             choices=["small", "medium", "big"])
     cockpit.add_argument("--init_train_length", type=int, default=10)

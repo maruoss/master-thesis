@@ -1,3 +1,5 @@
+# How to create environment.yml:
+# ---
 # 1. "conda env export --from-history > environment.yml"
 # 2. Then add pip libraries manually from  "conda env export > environment.yml"
 # 3. Add -pytorch to channels, otherwise ResolvePackageNotFound will occur...
