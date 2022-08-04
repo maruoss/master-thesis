@@ -120,11 +120,11 @@ def load_rf(args, data):
 
     # Example parameters to tune from SGDClassifier
     parameter_grid = {
-        "clf__max_depth": tune.randint(1, 20),
-        "clf__min_samples_split": tune.choice([1, 2, 3, 4, 5]),
+        "clf__max_depth": tune.randint(1, 6),
+        "clf__min_samples_split": tune.choice([2, 3, 4, 5]),
         "clf__min_samples_leaf": tune.choice([1, 2, 3, 4, 5]),
         "clf__max_features": tune.uniform(0.1, 0.3), #sqrt(features) is a good start
-        "clf__max_leaf_nodes": tune.choice([1, 2, 3, 4, 5]),
+        "clf__max_leaf_nodes": tune.choice([2, 3, 4, 5]),
     }
     if args.pca and args.dataset=="small":
         parameter_grid["pca__n_components"] = [None, 5, 10] # None equals no PCA
