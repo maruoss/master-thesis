@@ -35,7 +35,7 @@ def args_nn(parser_train):
 
     # trainer
     group = parser_train.add_argument_group("Training Configuration")
-    group.add_argument("--max_epochs", type=int, default=100)
+    group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--check_val_every", type=int, default=10)
     # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
 
