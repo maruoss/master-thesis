@@ -30,6 +30,7 @@ def rf_run(args, year_idx, time, ckpt_path, config):
         dataset=args.dataset,
         init_train_length=args.init_train_length,
         val_length=args.val_length,
+        test_length=args.test_length,
         label_fn=args.label_fn,
     )
 

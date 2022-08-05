@@ -1,6 +1,8 @@
 from pathlib import Path
 import pdb
 from datetime import datetime
+from re import I
+import numpy as np
 import pandas as pd
 
 from pytorch_lightning import seed_everything
@@ -82,7 +84,11 @@ def add_stress_test_param(args):
     # One loop of maximum data size. Can edit args via dictionary.
     d["init_train_length"] = 26 - args.val_length - args.test_length
     d["dataset"] = "big"
-    d["max_epochs"] = 3
+    # Depending on which epoch key is avail., change it.
+    # it_keys = ["max_epochs", "max_iters", "n_estimators"]
+    # for i in it_keys:
+    #     if i in d.keys():
+    #         d[i] = 3 # change to 3 epochs
     d["num_samples"] = 1
 
 
@@ -138,6 +144,9 @@ if __name__ == "__main__":
     cockpit.add_argument("--reduction_factor", type=int, default=2)
 
     args = parser.parse_args()
+
+    assert args.init_train_length + args.val_length + args.test_length <= 26, \
+            ("(train + val + test) is bigger than total years in dataset (26).")
 
     # Stress test with biggest dataset? CAREFUL: needs a lot of memory!
     if args.stress_test:

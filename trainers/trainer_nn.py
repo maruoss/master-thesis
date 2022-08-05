@@ -29,6 +29,7 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
         batch_size=args.batch_size,
         init_train_length=args.init_train_length,
         val_length=args.val_length,
+        test_length=args.test_length,
         label_fn=args.label_fn
     )
     dm.setup() #needed for model parameters
@@ -58,7 +59,7 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     # name = create_foldername(model=model, dm=dm, to_add=to_add, to_exclude=to_exclude, tag=args.tag)
     name = time
     train_year_end = int(dm.dates.iloc[:dm.eoy_train].iloc[-1].strftime("%Y"))
-    val_year_end = train_year_end+args.val_length
+    val_year_end = train_year_end + args.val_length
     version = f"train{train_year_end}_val{val_year_end}"
 
     # save hyperparams as .json
@@ -152,6 +153,7 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
         batch_size=config["batch_size"],
         init_train_length=args.init_train_length,
         val_length=args.val_length,
+        test_length=args.test_length,
         label_fn=args.label_fn,
     )
     dm.setup()
@@ -340,6 +342,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
             batch_size=1, #any number, doesnt matter for predict
             init_train_length=args.init_train_length,
             val_length=args.val_length,
+            test_length=args.test_length,
             label_fn=args.label_fn,
             # config=model.hparams.config, # so that config is not hyperparam search again
         )

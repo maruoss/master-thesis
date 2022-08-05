@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.model_selection import PredefinedSplit
 import torch
 
-from utils.preprocess import CVSplitter, binary_categorize, feature_engineer, multi_categorize
+from utils.preprocess import YearEndIndeces, binary_categorize, feature_engineer, multi_categorize
 from torch.utils.data import TensorDataset, DataLoader
 import pytorch_lightning as pl
 from pathlib import Path
@@ -11,6 +11,7 @@ import pdb
 from sklearn.utils.class_weight import compute_class_weight
 
 class MyDataModule_Loop(pl.LightningDataModule):
+    """DataModule for Pytorch Lightning (Neural Network)."""
     def __init__(self,
                  path: str, # will be converted to Path in __init__
                  year_idx: int,
@@ -18,10 +19,10 @@ class MyDataModule_Loop(pl.LightningDataModule):
                  batch_size: int,
                  init_train_length: int,
                  val_length: int,
+                 test_length: int,
                 #  start_val: str, 
                 #  start_test: str,
                  label_fn: str,
-                #  config: dict = None,
         ):
         super().__init__()
         self.save_hyperparameters(ignore=["path"])
@@ -31,8 +32,12 @@ class MyDataModule_Loop(pl.LightningDataModule):
         self.data = load_data(path, dataset)
 
         # get splits
-        splitter = CVSplitter(self.data["date"], init_train_length=init_train_length, 
-                                val_length=val_length)
+        splitter = YearEndIndeces(
+                                self.data["date"], 
+                                init_train_length=init_train_length, 
+                                val_length=val_length,
+                                test_length=test_length,
+                                )
         eoy_indeces = list(splitter.generate_idx())
         self.eoy_train = eoy_indeces[year_idx]["train"]
         self.eoy_val = eoy_indeces[year_idx]["val"]
@@ -174,14 +179,15 @@ class MyDataModule_Loop(pl.LightningDataModule):
 #****************************************************************************************
 
 class Dataset():
-    """Dataset non-torch classifiers. Only provides train, val and test set
+    """Dataset for non-torch classifiers. Provides train, val and test set
     in numpy. Can also output predefinded cv splits for gridsearch."""
     def __init__(self, 
                 path: str, 
                 year_idx: int, 
                 dataset: str, 
                 init_train_length: int, 
-                val_length: int, 
+                val_length: int,
+                test_length: int,
                 label_fn: str,
                 ):
 
@@ -190,8 +196,12 @@ class Dataset():
         self.data = load_data(path, dataset)
 
         # get splits
-        splitter = CVSplitter(self.data["date"], init_train_length=init_train_length, 
-                                val_length=val_length, test_length=1)
+        splitter = YearEndIndeces(
+                                self.data["date"], 
+                                init_train_length=init_train_length, 
+                                val_length=val_length, 
+                                test_length=test_length,
+                                )
         eoy_indeces = list(splitter.generate_idx())
         self.eoy_train = eoy_indeces[year_idx]["train"]
         self.eoy_val = eoy_indeces[year_idx]["val"]

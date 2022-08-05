@@ -46,6 +46,7 @@ def inner_xgb_tune(config, args, year_idx, ckpt_path):
         # batch_size=args.batch_size,
         init_train_length=args.init_train_length,
         val_length=args.val_length,
+        test_length=args.test_length,
         label_fn=args.label_fn,
     )
     # Get datasets from data.
@@ -224,6 +225,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
             # batch_size=args.batch_size,
             init_train_length=args.init_train_length,
             val_length=args.val_length,
+            test_length=args.test_length,
             label_fn=args.label_fn,
         )
         # Load best model.
