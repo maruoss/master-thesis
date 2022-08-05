@@ -86,26 +86,31 @@ def multi_categorize(y: float, classes:int):
         raise ValueError("Only multi for 3 or 5 classes implemented right now.")
 
 
-# create gridsearch timeseries splits
-class CVSplitter:
-    """ Generator for data splits
-    Args:
-    dates: pandas.Series of datetime,
-    init_train_length: int,
-    val_length: int
+class YearEndIndeces:
+    """Generator for indices where years change.
+
+        Args:
+            dates (pandas.Series):      series of datetimes,
+            init_train_length (int):    initial train length,
+            val_length (int):           validation length
     """
-    def __init__(self, dates, init_train_length=10, val_length=2, test_length=1):
-        # find indeces where years change (will ignore last year end in dates)
+    def __init__(self, dates, init_train_length, val_length, test_length):
+        # Find indeces where years change.
         self.val_length = val_length
         self.test_length = test_length
+        # Get end of month indeces for slicing.
+        # TECHNICALLY its start of month indeces, i.e. first row of January 31,
+        # but because for slicing [:idx], idx is not included, we name it end of
+        # year here.
         self.eoy_idx =  np.where((dates.dt.year.diff() == 1))[0]
-        self.eoy_idx = np.append(self.eoy_idx, len(dates)) #append end of year of last year in dates
+        # Append last row as end of year of last year.
+        self.eoy_idx = np.append(self.eoy_idx, len(dates))
 
-        assert init_train_length + val_length + test_length <= len(self.eoy_idx) + 1, \
-        "defined train and val are larger than number of years in dataset"
+        assert init_train_length + val_length + test_length <= len(self.eoy_idx), \
+            ("defined train and val are larger than eoy_indeces generated")
         assert init_train_length > 0, "init_train_length must be strictly greater than 0"
 
-        # align the 4th idx to be the end of the 5th year...
+        # The 4th idx in eoy_idx is the end of year 5. -> Subtract 1.
         self.train_start_idx = init_train_length - 1
 
         self.train_eoy = self.eoy_idx[self.train_start_idx:-(val_length+test_length)]
@@ -113,10 +118,10 @@ class CVSplitter:
         # For generate_idx():
         self.test_eoy = self.eoy_idx[self.train_start_idx + val_length + test_length:]
 
-    def generate(self):
-        for i in range(len(self.eoy_idx) - (self.train_start_idx + self.val_length)):
-            yield (list(range(self.train_eoy[i])),
-                   list(range(self.train_eoy[i], self.val_eoy[i])))
+    # def generate(self):
+    #     for i in range(len(self.eoy_idx) - (self.train_start_idx + self.val_length)):
+    #         yield (list(range(self.train_eoy[i])),
+    #                list(range(self.train_eoy[i], self.val_eoy[i])))
 
     def generate_idx(self):
         for i in range(len(self.eoy_idx) - (self.train_start_idx + self.val_length 
