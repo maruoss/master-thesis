@@ -135,7 +135,8 @@ def load_lin(args, data):
     parameter_grid = {
         # Dont change loss.
         "clf__loss": [args.loss], #logloss (Log Reg.) or hinge (linear SVM)
-        "clf__alpha": [1e-6, 1e-3, 1, 100, 10000],
+        # "clf__penalty": ["l2", "l1", "elasticnet"]
+        "clf__alpha": np.logspace(-6, 5, 12),
     }
     if args.pca and args.dataset=="small":
         parameter_grid["pca__n_components"] = [None, 5, 10] # None equals no PCA
