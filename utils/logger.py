@@ -1,6 +1,8 @@
 import pathlib
 import pdb
 
+import numpy as np
+
 
 def create_foldername(model, dm, to_add: dict ={}, to_exclude: list = [], tag=''):
     """needed in train to convert to_add, model and dm parameters to string repr."""
@@ -58,8 +60,11 @@ def serialize_config(config: dict, tag=''):
         try: # ray tune objects
              dict_to_serialize[k] = v.domain_str
         except: # all other objects, gridsearch and ints/floats
-            dict_to_serialize[k] = v
-
+            # if gridsearch has np.logspace or similar...
+            if isinstance(v, np.ndarray):
+                dict_to_serialize[k] = v.tolist()
+            else:
+                dict_to_serialize[k] = v
     return dict_to_serialize
 
 
