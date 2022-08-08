@@ -6,7 +6,6 @@ import pdb
 
 def load_args(parser, mode: str, model: str):
     """load arguments for respective mode and model"""
-    # pdb.set_trace()
     globals()[f"args_{model}"](parser)
 
 
@@ -37,7 +36,7 @@ def args_nn(parser_train):
     group = parser_train.add_argument_group("Training Configuration")
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--check_val_every", type=int, default=10)
-    # parser = pl.Trainer.add_argparse_args(parser) # all the default trainer methods
+    group.add_argument("--cpus_per_trial", type=int, default=8)
 
 
 def args_lin(parser_train):
@@ -94,4 +93,5 @@ def args_xgb(parser_train):
                             help="number of bad epochs before stop")
 
     group = parser_train.add_argument_group("Training Configuration")
-    group.add_argument("--max_iters", type=int, default=1000)
+    group.add_argument("--num_boost_round", type=int, default=1000)
+    group.add_argument("--cpus_per_trial", type=int, default=8)

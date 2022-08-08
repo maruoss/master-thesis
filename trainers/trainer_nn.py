@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import pdb
 import numpy as np
@@ -97,7 +96,7 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
     trainer = pl.Trainer(
         max_epochs=args.max_epochs,
         deterministic=True,
-        gpus=1,
+        gpus=args.gpus_per_trial,
         logger=logger,
         check_val_every_n_epoch=args.check_val_every,
         callbacks=[early_stop_callback, checkpoint_callback],
@@ -263,7 +262,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
 
     scheduler = ASHAScheduler(
         max_t=args.max_epochs,
-        grace_period=args.grace_period,
+        grace_period=args.grace_pct*args.max_epochs, #how many epochs for sure.
         reduction_factor=args.reduction_factor
     )
     reporter = CLIReporter(
@@ -278,7 +277,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                                                     year_idx=year_idx,
                                                     ckpt_path=ckpt_path,
                                                    )
-    resources_per_trial = {"cpu": 8, "gpu": args.gpus_per_trial}
+    resources_per_trial = {"cpu": args.cpus_per_trial, "gpu": args.gpus_per_trial}
 
     log_dir, val_year_end, name, summary_path = set_tune_log_dir(args, year_idx, time, config)
 

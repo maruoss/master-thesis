@@ -5,6 +5,7 @@ from shutil import rmtree
 from joblib import Memory
 import numpy as np
 import pandas as pd
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
@@ -17,6 +18,7 @@ from utils.helper import get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
 from sklearn.kernel_approximation import Nystroem
 from ray import tune
+from ray.tune.schedulers import ASHAScheduler
 
 from utils.logger import serialize_args, serialize_config
 
@@ -43,21 +45,28 @@ def rf_run(args, year_idx, time, ckpt_path, config):
     log_dir, val_year_end, name, summary_path = \
         set_tune_log_dir(args, year_idx, time, parameter_grid)
 
+    scheduler = ASHAScheduler(
+        max_t=args.n_estimators,
+        grace_period= args.grace_pct*args.n_estimators, #how many epochs for sure.
+        reduction_factor=args.reduction_factor
+    )
+
     # Randomized Search, not Gridsearch as for sk-classifiers...
     tune_search = TuneSearchCV(
         clf,
         parameter_grid,
         cv=train_val_split,
-        early_stopping=True, # early stopping with ASHA
+        early_stopping=scheduler, # early stopping with ASHA
         max_iters=args.n_estimators, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         mode="max",
         refit="balanced_accuracy",
-        n_jobs=args.n_jobs, #how many trials in parallel
+        n_jobs=args.njobs, #how many trials in parallel
         verbose=2,
         local_dir=log_dir,
         name=name,
         n_trials=args.num_samples,
+        random_state=args.seed,
     #     return_train_score=True # can be comp. expensive
     )
 

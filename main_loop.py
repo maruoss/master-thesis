@@ -21,7 +21,7 @@ def run(args, year_idx, time, ckpt_path, config):
         Arguments:
             args (Namespace):   Input parameters
             year_idx (int):     Loop index
-            time (datetime):    Start_time for folder name
+            time (datetime):    Start_time (+ args.tag) for folder name
             ckpt_path (Path):   Path of best checkpoint
             config (dict):      Config of best checkpoint
 
@@ -139,8 +139,9 @@ if __name__ == "__main__":
     cockpit = parser.add_argument_group("Tune Configuration")
     cockpit.add_argument("--num_samples", type=int, default=20)
     cockpit.add_argument("--gpus_per_trial", type=int, default=1)
+
     # ASHA
-    cockpit.add_argument("--grace_period", type=int, default=1)
+    cockpit.add_argument("--grace_pct", type=float, default=0.2)
     cockpit.add_argument("--reduction_factor", type=int, default=2)
 
     args = parser.parse_args()

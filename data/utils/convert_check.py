@@ -65,8 +65,9 @@ def csv_eq_parquet(args):
 
 
 def small_med_big_eq(path: Path):
-    """Read in 'small', 'medium' and 'big' datasets and check whether they are
-    equal -> whether we predicted on same row order for all three datasets...
+    """Read in 'small', 'medium' and 'big' datasets and check whether their dates
+    and option return columns equal -> whether we predicted on same row order 
+    for all three datasets...
     
     Args:
         path (Path):    requires 'final_df_small.parquet', 'final_df_med_fillmean.parquet' 

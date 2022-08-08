@@ -140,7 +140,8 @@ class MyDataModule_Loop(pl.LightningDataModule):
     def train_dataloader(self):
         dataset = TensorDataset(self.X_train, self.y_train)
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
-                         num_workers=4,
+                         num_workers=0, #uses just the main worker, see https://stackoverflow.com/questions/71713719/runtimeerror-dataloader-worker-pids-15876-2756-exited-unexpectedly
+                         # there are issues occuring on windows where PID workers exit unexpectedly.
                          pin_memory=True,
                          shuffle=True, #shuffle training data
                          )
@@ -148,7 +149,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
     def val_dataloader(self):
         dataset = TensorDataset(self.X_val, self.y_val)
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
-                         num_workers=4,
+                         num_workers=0,
                          pin_memory=True,
                          shuffle=False,
                          )
@@ -156,7 +157,7 @@ class MyDataModule_Loop(pl.LightningDataModule):
     def test_dataloader(self):
         dataset = TensorDataset(self.X_test, self.y_test)
         return DataLoader(dataset, batch_size=self.hparams.batch_size,
-                         num_workers=4,
+                         num_workers=0,
                          pin_memory=True,
                          shuffle=False, #must not shuffle here!
                          )
@@ -164,10 +165,10 @@ class MyDataModule_Loop(pl.LightningDataModule):
     def predict_dataloader(self):
         dataset = self.X_test # predict_step expects tensor not a list
         return DataLoader(dataset, batch_size=len(self.X_test), #load the whole testset
-                    num_workers=4,
-                    pin_memory=True,
-                    shuffle=False, #must not shuffle here!
-                    )
+                        num_workers=0,
+                        pin_memory=True,
+                        shuffle=False, #must not shuffle here!
+                        )
 
     @staticmethod
     def add_model_specific_args(parent_parser):

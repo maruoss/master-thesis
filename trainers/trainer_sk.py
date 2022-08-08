@@ -5,6 +5,7 @@ from shutil import rmtree
 from joblib import Memory
 import numpy as np
 import pandas as pd
+
 from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -15,6 +16,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from utils.helper import get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
 from sklearn.kernel_approximation import Nystroem
+from ray.tune.schedulers import ASHAScheduler
 
 from utils.logger import serialize_args, serialize_config
 
@@ -43,16 +45,22 @@ def sk_run(args, year_idx, time, ckpt_path, config):
     log_dir, val_year_end, name, summary_path = \
         set_tune_log_dir(args, year_idx, time, parameter_grid)
 
+    scheduler = ASHAScheduler(
+        max_t=args.max_iters,
+        grace_period=args.grace_pct*args.max_iters, #how many epochs for sure.
+        reduction_factor=args.reduction_factor,
+    )
+
     tune_search = TuneGridSearchCV(
         clf,
         parameter_grid,
         cv=train_val_split,
-        early_stopping=True, # early stopping with ASHA
+        early_stopping=scheduler, # early stopping with ASHA
         max_iters=args.max_iters, # overrules max_iter of SGD classifiers
         scoring=["accuracy", "balanced_accuracy"],
         mode="max", #maximize scoring
         refit="balanced_accuracy",
-        n_jobs=args.n_jobs, #how many trials in parallel
+        n_jobs=args.njobs, #how many trials in parallel
         verbose=2,
         local_dir=log_dir,
         name=name,
