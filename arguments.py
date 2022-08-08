@@ -49,7 +49,7 @@ def args_lin(parser_train):
     group.add_argument("--pca", action="store_true")
 
     group = parser_train.add_argument_group("Sklearn Tune Configuration")
-    group.add_argument("--max_iters", type=int, default=100)
+    group.add_argument("--max_iters", type=int, default=300)
     group.add_argument("--n_jobs", type=int, default=2) #how many trials in parallel
 
 
@@ -63,7 +63,7 @@ def args_svm(parser_train):
     group.add_argument("--pca", action="store_true")
 
     group = parser_train.add_argument_group("Sklearn Tune Configuration")
-    group.add_argument("--max_iters", type=int, default=100)
+    group.add_argument("--max_iters", type=int, default=300)
     group.add_argument("--n_jobs", type=int, default=2) #how many trials in parallel
 
 
@@ -77,7 +77,7 @@ def args_rf(parser_train):
     group.add_argument("--pca", action="store_true")
 
     group = parser_train.add_argument_group("Sklearn Tune Configuration")
-    group.add_argument("--n_estimators", type=int, default=1000)
+    group.add_argument("--n_estimators", type=int, default=100)
     group.add_argument("--n_jobs", type=int, default=2) #how many trials in parallel
 
 
