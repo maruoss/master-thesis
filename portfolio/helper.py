@@ -15,7 +15,7 @@ def collect_preds(exp_dir: Path):
         if dir.is_dir() and dir.name != "predictions":
             # See https://docs.python.org/3/library/fnmatch.html#module-fnmatch
             # for filename pattern matching below.
-            for file in dir.glob("prediction[1,2]???.csv"):
+            for file in dir.glob("prediction[1,2]???.csv"): #[1,2]??? for years 1995,..,2000,..
                 # If files do not exist in 'predictions' folder yet
                 if not (preds_dir/(file.name)).is_file():
                     print(f"Copy file: '{file.relative_to(Path.cwd())}'"
@@ -119,3 +119,55 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
                 f"Not all min class predictions are equal in each month "
                 f"the minimum class {min_theor} was not predicted in at least one month.")
     return max_real, min_real
+
+
+def various_tests(concat_df: pd.DataFrame, col_list: list, classes: list, agg_dict: dict):
+    """Perform various tests to check our results."""
+
+    # Test: compare agg_dict with agg_dict calculated via 'weighted_avg' function 
+    # and not via 'np.average'.
+    agg_dict2 = {}
+    for c in classes:
+        agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
+        agg_dict2[f"class_{c}"] = agg_df
+    for key in agg_dict.keys():
+        pd.testing.assert_frame_equal(agg_dict[key], agg_dict2[key])
+
+    # Test: check whether first and last month aggregation yield same as
+    # first and last entries of agg_dict.
+    first_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[0]]
+    last_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[-1]]
+    for k in col_list:
+        for c in classes:
+            assert np.average(first_month[k], weights=first_month[f"weights_{c}"]) == agg_dict[f"class_{c}"].iloc[0][k]
+            assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict[f"class_{c}"].iloc[-1][k]
+            assert weighted_avg(first_month, k, f"weights_{c}") == agg_dict2[f"class_{c}"].iloc[0][k]
+            assert weighted_avg(last_month, k, f"weights_{c}") == agg_dict2[f"class_{c}"].iloc[-1][k]
+
+    # Test: if "pred" column in aggregated df's corresponds to class in each row (month).
+    for c in classes:
+        assert (agg_dict[f"class_{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
+    # Test if short and low portfolios are aggregated correctly.
+    assert ((agg_dict[f"class_{classes[0]}"]["if_long_short"] == -1).all() and
+            (agg_dict[f"class_{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
+            "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
+
+
+# Weighted average functions used to aggreagte portfolios. We use np.average.
+def weighted_means_by_column(x, cols, w):
+    """ This takes a DataFrame and averages each data column (cols)
+        while weighting observations by column w.
+    """
+    return pd.Series([np.average(x[c], weights=x[w] ) for c in cols], cols)
+
+
+# Only used for testing:
+def weighted_avg(df, values, weights):
+    return sum(df[values] * df[weights]) / df[weights].sum()
+
+def weighted_means_by_column2(x, cols, w):
+    """ This takes a DataFrame and averages each data column (cols)
+        while weighting observations by column w.
+    """
+    return pd.Series([weighted_avg(x, c, weights=w) for c in cols], cols)
+# ---

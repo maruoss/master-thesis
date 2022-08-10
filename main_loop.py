@@ -52,7 +52,7 @@ def looper(args):
     """Main runner. Loops over specified train/ val splits and saves results."""
     # Time for logging folder name.
     start_time = datetime.now()
-    time = start_time.strftime("%Y%m%d%H%M%S") + args.tag
+    time = start_time.strftime("%Y%m%d%H%M%S") + args.tag # unique experiment folder name.
     collect = {} # collect val metrics for final csv summary in dict
     time_collect = {} # collect duration for each loop and save in dict
     val_year_start = 1996 + args.init_train_length

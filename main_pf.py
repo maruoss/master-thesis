@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from data.utils.convert_check import small_med_big_eq
-from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, get_and_check_min_max_pred
+from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, get_and_check_min_max_pred, various_tests, weighted_avg, weighted_means_by_column, weighted_means_by_column2
 from utils.preprocess import YearMonthEndIndeces
 
 
@@ -19,8 +19,8 @@ def run(args):
     exp_dir = matches_list[0]
     # Move all predictions to 'predictions' folder with the expdir folder.
     collect_preds(exp_dir)
-    #TODO: combine multiple experiment predictions together? list of expids?
-    # Read all prediction csv.
+    #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
+    # Read all prediction csv in concatenated df.
     preds_concat_df = concat_and_save_preds(exp_dir)
 
     # Get path where datasets reside:
@@ -34,7 +34,7 @@ def run(args):
     # print("Dates and option return columns from small, medium and big datasets are "
     #         "equal!")
 
-    # Get small dataset.
+    # Get small dataset (irrespective of small/medium/big used for train!).
     df_small = pd.read_parquet(datapath/"final_df_small.parquet")
     dates = df_small["date"]
 
@@ -89,12 +89,12 @@ def run(args):
     condlist = [concat_df["pred"] == min_pred, concat_df["pred"] == max_pred]
     choicelist = [-1, 1]
     no_alloc_value = 0
-    concat_df["weights"] = np.select(condlist, choicelist, no_alloc_value)
+    concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
     # Delete below in production...
-    assert (test == concat_df["weights"]).all(), "Two methods to create weightings do not yield same result."
+    assert (test == concat_df["if_long_short"]).all(), "Two methods to create weightings do not yield same result."
     # ---
-    
-    # Create weight columns for all classes.
+
+    # Create separate weight column for each class.
     for c in classes:
         condlist = [concat_df["pred"] == c]
         choicelist = [1]
@@ -105,61 +105,32 @@ def run(args):
     col_list = [val for val in concat_df.columns.tolist() if "weight" not in val 
                 and "date" not in val]
 
-    def weighted_avg(df, values, weights):
-        return sum(df[values] * df[weights]) / df[weights].sum()
-    
-    def weighted_means_by_column(x, cols, w):
-        """ This takes a DataFrame and averages each data column (cols)
-            while weighting observations by column w.
-        """
-        return pd.Series([np.average(x[c], weights=x[w] ) for c in cols], cols)
-    
-    # Delete this in production.
-    def weighted_means_by_column2(x, cols, w):
-        """ This takes a DataFrame and averages each data column (cols)
-            while weighting observations by column w.
-        """
-        return pd.Series([weighted_avg(x, c, weights=w) for c in cols], cols)
-    # ---
-
     # Collect all portfolios in a list.
-    agg_list = {}
+    agg_dict = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column, col_list, f"weights_{c}")
-        agg_list[f"class_{c}"] = agg_df
+        agg_dict[f"class_{c}"] = agg_df
 
-    # Test ---
-    agg_list2 = {}
-    for c in classes:
-        agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
-        agg_list2[f"class_{c}"] = agg_df
-    for key in agg_list.keys():
-        pd.testing.assert_frame_equal(agg_list[key], agg_list2[key])
-    # ---
-    # Another test. Delete in production---
-    test_start = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[0]]
-    test_end = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[-1]]
-    for k in col_list:
-        for c in classes:
-            assert np.average(test_start[k], weights=test_start[f"weights_{c}"]) == agg_list[f"class_{c}"].iloc[0][k]
-            assert np.average(test_end[k], weights=test_end[f"weights_{c}"]) == agg_list[f"class_{c}"].iloc[-1][k]
-            assert weighted_avg(test_start, k, f"weights_{c}") == agg_list2[f"class_{c}"].iloc[0][k]
-            assert weighted_avg(test_end, k, f"weights_{c}") == agg_list2[f"class_{c}"].iloc[-1][k]
-    #---
-    # Test if "pred" column in aggregated df's corresponds to class in each row.
-    for c in classes:
-        assert (agg_list[f"class_{c}"]["pred"] == c).all(), "aggregated 'pred' is not equal to the class in each month"
+    # Perform various tests to check our calculations.
+    various_tests(concat_df, col_list, classes, agg_dict)
 
+    # Save all aggregated dataframes per class to 'portfolios' subfolder within the 
+    # experiment directory 'exp_dir'.
+    pf_dir = exp_dir/"portfolios"
+    try: #if portfolios folder doesnt exist...
+        pf_dir.mkdir(exist_ok=False, parents=False) # raise Error if parents are missing.
+        for c, df in agg_dict.items():
+            df.to_csv(exp_dir/pf_dir/f"agg_df_{c}.csv")
+    except FileExistsError: # portfolios folder already exists, do nothing.
+        print("Directory 'portfolios' already exists. Will leave as is and continue with the code.")
 
+    # # Get geometric mean of Long-Short PF
+    # long_short_monthly = (agg_dict[f"class_{classes[-1]}"] - agg_dict[f"class_{classes[0]}"])
+    # cols_to_keep = [col for col in long_short_monthly.columns.tolist() if "weight" not in col]
+    # long_short_monthly = long_short_monthly[cols_to_keep]
 
+    # TODO: create LaTeX output for portfolio mean, sd, sharpe ratio as in Bali (2021)?
     pdb.set_trace()
-
-
-
-    
-
-
-
 
 
 if __name__ == "__main__":

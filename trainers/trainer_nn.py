@@ -63,7 +63,7 @@ def nn_train(args, year_idx, time, ckpt_path=None, config=None):
 
     # save hyperparams as .json
     summary_path = Path.cwd()/log_dir/time
-    summary_path.mkdir(exist_ok=True, parents=True)
+    summary_path.mkdir(exist_ok=False, parents=True)
     with open(summary_path/"params.json", 'w') as f:
         json.dump(params_to_dict(model=model, dm=dm, to_add=to_add, 
                     to_exclude=to_exclude, tag=args.tag), fp=f, indent=3)
