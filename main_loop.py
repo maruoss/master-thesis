@@ -137,11 +137,13 @@ if __name__ == "__main__":
     cockpit.add_argument("--stress_test", action="store_true")
     # Tune configuration
     cockpit = parser.add_argument_group("Tune Configuration")
-    cockpit.add_argument("--num_samples", type=int, default=20)
+    cockpit.add_argument("--num_samples", type=int, default=20, help="How many "
+                        "parameter configurations are sampled.")
     cockpit.add_argument("--gpus_per_trial", type=int, default=1)
-
     # ASHA
-    cockpit.add_argument("--grace_pct", type=float, default=0.2)
+    cockpit.add_argument("--grace_pct", type=float, default=0.2, 
+                        help="Percentage of epochs that have to be run before "
+                        "early stop is possible.")
     cockpit.add_argument("--reduction_factor", type=int, default=2)
 
     args = parser.parse_args()
