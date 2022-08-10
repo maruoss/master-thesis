@@ -129,7 +129,7 @@ def various_tests(concat_df: pd.DataFrame, col_list: list, classes: list, agg_di
     agg_dict2 = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
-        agg_dict2[f"class_{c}"] = agg_df
+        agg_dict2[f"class{c}"] = agg_df
     for key in agg_dict.keys():
         pd.testing.assert_frame_equal(agg_dict[key], agg_dict2[key])
 
@@ -139,17 +139,17 @@ def various_tests(concat_df: pd.DataFrame, col_list: list, classes: list, agg_di
     last_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[-1]]
     for k in col_list:
         for c in classes:
-            assert np.average(first_month[k], weights=first_month[f"weights_{c}"]) == agg_dict[f"class_{c}"].iloc[0][k]
-            assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict[f"class_{c}"].iloc[-1][k]
-            assert weighted_avg(first_month, k, f"weights_{c}") == agg_dict2[f"class_{c}"].iloc[0][k]
-            assert weighted_avg(last_month, k, f"weights_{c}") == agg_dict2[f"class_{c}"].iloc[-1][k]
+            assert np.average(first_month[k], weights=first_month[f"weights_{c}"]) == agg_dict[f"class{c}"].iloc[0][k]
+            assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict[f"class{c}"].iloc[-1][k]
+            assert weighted_avg(first_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[0][k]
+            assert weighted_avg(last_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[-1][k]
 
     # Test: if "pred" column in aggregated df's corresponds to class in each row (month).
     for c in classes:
-        assert (agg_dict[f"class_{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
+        assert (agg_dict[f"class{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
     # Test if short and low portfolios are aggregated correctly.
-    assert ((agg_dict[f"class_{classes[0]}"]["if_long_short"] == -1).all() and
-            (agg_dict[f"class_{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
+    assert ((agg_dict[f"class{classes[0]}"]["if_long_short"] == -1).all() and
+            (agg_dict[f"class{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
             "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
 
 

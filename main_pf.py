@@ -94,7 +94,7 @@ def run(args):
     assert (test == concat_df["if_long_short"]).all(), "Two methods to create weightings do not yield same result."
     # ---
 
-    # Create separate weight column for each class.
+    # Create separate weight column for each class in concat_df.
     for c in classes:
         condlist = [concat_df["pred"] == c]
         choicelist = [1]
@@ -105,11 +105,11 @@ def run(args):
     col_list = [val for val in concat_df.columns.tolist() if "weight" not in val 
                 and "date" not in val]
 
-    # Collect all portfolios in a list.
+    # Collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     agg_dict = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column, col_list, f"weights_{c}")
-        agg_dict[f"class_{c}"] = agg_df
+        agg_dict[f"class{c}"] = agg_df
 
     # Perform various tests to check our calculations.
     various_tests(concat_df, col_list, classes, agg_dict)
@@ -125,7 +125,7 @@ def run(args):
         print("Directory 'portfolios' already exists. Will leave as is and continue with the code.")
 
     # # Get geometric mean of Long-Short PF
-    # long_short_monthly = (agg_dict[f"class_{classes[-1]}"] - agg_dict[f"class_{classes[0]}"])
+    # long_short_monthly = (agg_dict[f"class{classes[-1]}"] - agg_dict[f"class{classes[0]}"])
     # cols_to_keep = [col for col in long_short_monthly.columns.tolist() if "weight" not in col]
     # long_short_monthly = long_short_monthly[cols_to_keep]
 
