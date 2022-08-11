@@ -150,7 +150,7 @@ def prepare_dataset(args):
     final_df = final_df.drop(["secid", "optionid", "exdate", "sdate", "edate", "permno", "index"], axis=1)
     print("Done!")
 
-    # Save final_df depending on arguments.
+    # Save final_df depending on arguments. Final_df is equal to the 'big' dataset.
     print("Save final dataframe...")
     save_df(path, final_df, args)
     print("Done!")

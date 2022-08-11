@@ -14,7 +14,7 @@ def args_nn(parser_train):
     group = parser_train.add_argument_group("Early Stopping Configuration")
     # group.add_argument("--monitor", type=str, default="loss/val_loss")
     # group.add_argument("--es_mode", type=str, default="min")
-    group.add_argument("--patience", type=int, default=5, #check check_val_every
+    group.add_argument("--patience", type=int, default=5, #multiply with check_val_every
                         help="number of bad validation epochs before stop, depends "
                         "on 'check_val_every' parameter as well")
 
