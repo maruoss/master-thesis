@@ -52,7 +52,7 @@ def set_tune_log_dir(args, year_idx, time, config):
 
     # save config space as .json
     summary_path = Path.cwd()/log_dir/time
-    summary_path.mkdir(exist_ok=False, parents=True) #raise Error if target dir exists alrdy.
+    summary_path.mkdir(exist_ok=True, parents=True)
     with open(summary_path/"config.json", 'w') as f:
         json.dump(serialize_config(config), fp=f, indent=3)
 
