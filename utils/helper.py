@@ -47,21 +47,21 @@ def set_tune_log_dir(args, year_idx, time, config):
     # CAREFUL: will give error if directory path is too large
     train_year_end = 1996 + args.init_train_length + year_idx - 1
     val_year_end = train_year_end + args.val_length
-    years = f"train{train_year_end}_val{val_year_end}"
-    name = time+"\\"+years
+    loop_dir = f"train{train_year_end}_val{val_year_end}"
+    # name = time+"\\"+years
 
     # save config space as .json
-    summary_path = Path.cwd()/log_dir/time
-    summary_path.mkdir(exist_ok=True, parents=True)
-    with open(summary_path/"config.json", 'w') as f:
+    exp_dir = Path.cwd()/log_dir/time
+    exp_dir.mkdir(exist_ok=True, parents=True)
+    with open(exp_dir/"config.json", 'w') as f:
         json.dump(serialize_config(config), fp=f, indent=3)
 
     # save args to json
     args_dict = serialize_args(args.__dict__) #functions are not serializable
-    with open(summary_path/'args.json', 'w') as f:
+    with open(exp_dir/'args.json', 'w') as f:
         json.dump(args_dict, f, indent=3)
         
-    return log_dir, val_year_end, name, summary_path
+    return val_year_end, loop_dir, exp_dir
 
 
 def save_time(start_time: datetime):

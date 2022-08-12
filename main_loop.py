@@ -28,7 +28,7 @@ def run(args, year_idx, time, ckpt_path, config):
         Returns:
             Tuple(
             best_result (dict): Metrics dictionary of best results
-            summary_path (Path):Where summary should be saved
+            exp_dir (Path):     Experiment directory
             ckpt_path (Path):   Where best model is saved
             config (dict):      Config of best model
             )
@@ -43,10 +43,10 @@ def run(args, year_idx, time, ckpt_path, config):
                 }
 
     # If no checkpoint here -> no refit possible.
-    best_result, summary_path, ckpt_path, config \
+    best_result, exp_dir, ckpt_path, config \
         = fun_dict[f"{args.model}_{args.mode}"](args, year_idx, time, ckpt_path, config)
 
-    return best_result, summary_path, ckpt_path, config
+    return best_result, exp_dir, ckpt_path, config
 
 def looper(args):
     """Main runner. Loops over specified train/ val splits and saves results."""
@@ -63,18 +63,18 @@ def looper(args):
     for year_idx in range(27 - (args.init_train_length + args.val_length + args.test_length)):
     # for year_idx in range(1):
         (collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"],
-        summary_path,
+        exp_dir,
         best_ckpt_path,
         best_config) = run(args, year_idx, time, best_ckpt_path, best_config)
         time_collect[f"loop_{year_idx}"], start_loop_time = save_time(start_loop_time)
 
     # Calculate metrics and save to .csv.
-    summary_to_csv(collect, summary_path)
+    summary_to_csv(collect, exp_dir)
     end_time = datetime.now()
     # Save time dictionary to csv.
     time_collect["Total Time"] = save_time(start_time)[0] #returns tuple
     time_collect_df = pd.DataFrame(time_collect).T
-    time_collect_df.to_csv(Path(summary_path,"time.csv"))
+    time_collect_df.to_csv(Path(exp_dir,"time.csv"))
     print(f"Finished. Completed in {(end_time - start_time).total_seconds()} seconds.")
 
 def add_stress_test_param(args):

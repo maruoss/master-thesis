@@ -166,12 +166,12 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                         "gpu": args.gpus_per_trial
                         }
     
-    log_dir, val_year_end, name, summary_path = \
+    val_year_end, loop_dir, exp_dir = \
         set_tune_log_dir(args, year_idx, time, search_space)
 
     analysis = tune.run(
         train_fn_with_parameters,
-        local_dir=log_dir,
+        local_dir=exp_dir,
         metric="val_logloss", #TuneReportChkptCallback redefined names
         mode="min",
         # You can add "gpu": 0.1 to allocate GPUs.
@@ -180,7 +180,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         num_samples=args.num_samples,
         scheduler=scheduler,
         progress_reporter=reporter,
-        name=name,
+        name=loop_dir,
         fail_fast=True, # stop all trials as soon as any trial errors
         keep_checkpoints_num=1, # only keep best checkpoint
         checkpoint_score_attr="min-val_logloss", #TuneReportChkptCallback redefined names
@@ -208,7 +208,7 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
     best_config = best_trial.config
 
     # Loop Path for best_config and prediction.csv.
-    loop_path = Path(Path.cwd(), log_dir, name)
+    loop_path = Path(Path.cwd(), exp_dir, loop_dir)
     
     # Save best config as .json.
     with open(loop_path/"best_config.json", 'w') as f:
@@ -254,4 +254,4 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         preds_argmax_df.to_csv(save_to_dir, index_label="id")
 
 
-    return best_result, summary_path, ckpt_path, config
+    return best_result, exp_dir, ckpt_path, config
