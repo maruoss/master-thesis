@@ -42,7 +42,7 @@ def rf_run(args, year_idx, time, ckpt_path, config):
     # Load classifier and specified param grid.
     clf, parameter_grid = load_rf(args, data)
 
-    val_year_end, loop_dir, exp_dir = \
+    val_year_end, loop_path, exp_path = \
         set_tune_log_dir(args, year_idx, time, parameter_grid)
 
     scheduler = ASHAScheduler(
@@ -63,8 +63,8 @@ def rf_run(args, year_idx, time, ckpt_path, config):
         refit="balanced_accuracy",
         n_jobs=args.njobs, #how many trials in parallel
         verbose=2,
-        local_dir=exp_dir,
-        name=loop_dir,
+        local_dir=exp_path,
+        name=loop_path,
         n_trials=args.num_samples,
         random_state=args.seed,
     #     return_train_score=True # can be comp. expensive
@@ -80,7 +80,7 @@ def rf_run(args, year_idx, time, ckpt_path, config):
     best_config = tune_search.best_params_
 
     # Loop Path for best_config and prediction.csv.
-    loop_path = Path(Path.cwd(), exp_dir, loop_dir)
+    loop_path = Path(Path.cwd(), exp_path, loop_path)
 
     # Add config to val_summary and save best config as .json.
     best_result.update(best_config)
@@ -99,7 +99,7 @@ def rf_run(args, year_idx, time, ckpt_path, config):
     # memory.clear(warn=False)
     # rmtree("cachedir")
 
-    return best_result, exp_dir, ckpt_path, config 
+    return best_result, exp_path, ckpt_path, config 
 
 
 def load_rf(args, data):

@@ -279,11 +279,11 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                                                    )
     resources_per_trial = {"cpu": args.cpus_per_trial, "gpu": args.gpus_per_trial}
 
-    val_year_end, loop_dir, exp_dir = set_tune_log_dir(args, year_idx, time, config)
+    val_year_end, loop_path, exp_path = set_tune_log_dir(args, year_idx, time, config)
 
     analysis = tune.run(
         train_fn_with_parameters,
-        local_dir=exp_dir,
+        local_dir=exp_path,
         resources_per_trial=resources_per_trial,
         metric="val_loss",
         mode="min",
@@ -291,7 +291,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         num_samples=args.num_samples,
         scheduler=scheduler,
         progress_reporter=reporter,
-        name=loop_dir,
+        name=loop_path,
         fail_fast=True, # stop all trials as soon as any trial errors
         keep_checkpoints_num=1, # only keep best checkpoint
         checkpoint_score_attr="min-val_loss",
@@ -317,7 +317,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
     best_config = best_trial.config
     
     # Loop Path for best_config and prediction.csv.
-    loop_path = Path(Path.cwd(), exp_dir, loop_dir)
+    loop_path = Path(Path.cwd(), exp_path, loop_path)
 
     # Save best config as .json.
     with open(loop_path/"best_config.json", 'w') as f:
@@ -360,4 +360,4 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         preds_argmax_df.to_csv(save_to_dir, index_label="id")
         
     # dict, Path obj., Path obj, dict
-    return best_result, exp_dir, ckpt_path, config 
+    return best_result, exp_path, ckpt_path, config 
