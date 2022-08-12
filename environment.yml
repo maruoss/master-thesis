@@ -16,6 +16,7 @@ dependencies:
   - torchaudio
   - torchvision
   - pytorch-lightning
+  - quantstats
   - tensorboard
   - pip:
     - pyarrow==8.0.0

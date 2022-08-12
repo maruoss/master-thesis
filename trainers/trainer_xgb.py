@@ -59,7 +59,7 @@ def inner_xgb_tune(config, args, year_idx, ckpt_path):
 
     es = xgb.callback.EarlyStopping(
         rounds=args.patience, # optimally same as frequency of ChkptCallback
-        min_delta=1e-4, # 1e-3 too high...
+        min_delta=0.0, # 1e-3, 1e-4 too high, set to 0.0 as in NN
         save_best=True, #whether to return best or last model
         maximize=False,
         data_name="eval", #prefix here
