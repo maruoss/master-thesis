@@ -163,7 +163,7 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     # Small dataset takes the option_return data + the newly created one_hot columns 
     # + option return, gives in total 22 columns (incl. target, option_return)
     prefix = f"final_df{args.tag}"
-    if args.size == "small":
+    if args.size == "small": # 22 columns.
         filename = prefix + "_small.parquet"
         # Only keep first 19 columns + 'cp_flag_C', 'cp_flag_P' and the target 'option_ret'
         small_df_columns = (final_df.iloc[:, :19].columns
@@ -171,7 +171,7 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
         small_final_df = final_df.loc[:, small_df_columns]
         small_final_df.to_parquet(path/filename) # 22 columns.
     
-    elif args.size == "medium":
+    elif args.size == "medium": # 116 columns.
         # Medium dataset takes all option + stock data but no sic onehot columns.
         if args.fill_na:  # NaNs filled.
             filename = prefix + f"_med_fill{args.fill_fn}.parquet"
@@ -181,7 +181,7 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
         medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')]
         medium_final_df.to_parquet(path/filename) # 116 columns.
 
-    elif args.size == "big":
+    elif args.size == "big": # 179 columns.
         # Big dataset leaves data as it is.
         if args.fill_na: # NaNs filled.
             filename= prefix + f"_big_fill{args.fill_fn}.parquet"
