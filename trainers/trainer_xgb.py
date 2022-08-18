@@ -162,7 +162,8 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                                                 ckpt_path=ckpt_path,
                                                 )
     resources_per_trial = {
-                        "cpu": args.cpus_per_trial,
+                        # Assuming machine has 8 cores per 1 gpu.
+                        "cpu": args.gpus_per_trial * 8,
                         "gpu": args.gpus_per_trial
                         }
     

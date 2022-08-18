@@ -134,6 +134,7 @@ dmypy.json
 logs
 lightning_logs
 upload.sh
+notebooks/results
 
 # Ignore data folder
 data/*

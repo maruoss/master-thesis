@@ -81,14 +81,14 @@ def add_stress_test_param(args):
     """Stress test model with args that give largest dataset."""
     # Get args as a dictionary.
     d = vars(args)
-    # One loop of maximum data size. Can edit args via dictionary.
+    # We want maximum data size. Can edit args via dictionary.
     d["init_train_length"] = 26 - args.val_length - args.test_length
-    d["dataset"] = "big"
+    # d["dataset"] = "big" #specify yourself.
     # Depending on which epoch key is avail., change it.
-    # it_keys = ["max_epochs", "max_iters", "n_estimators"]
-    # for i in it_keys:
-    #     if i in d.keys():
-    #         d[i] = 3 # change to 3 epochs
+    it_keys = ["max_epochs", "max_iters", "n_estimators"]
+    for i in it_keys:
+        if i in d.keys():
+            d[i] = 10 # change to 10 epochs
     d["num_samples"] = 1
 
 

@@ -277,7 +277,11 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                                                     year_idx=year_idx,
                                                     ckpt_path=ckpt_path,
                                                    )
-    resources_per_trial = {"cpu": args.cpus_per_trial, "gpu": args.gpus_per_trial}
+    # Assuming machine has 8 cores per 1 gpu
+    resources_per_trial = {
+                        "cpu": args.gpus_per_trial * 8,
+                        "gpu": args.gpus_per_trial
+                        }
 
     val_year_end, loop_path, exp_path = set_tune_log_dir(args, year_idx, time, config)
 

@@ -36,7 +36,7 @@ def args_nn(parser):
     group = parser.add_argument_group("Training Configuration")
     group.add_argument("--max_epochs", type=int, default=1000)
     group.add_argument("--check_val_every", type=int, default=10)
-    group.add_argument("--cpus_per_trial", type=int, default=8)
+    # group.add_argument("--cpus_per_trial", type=int, default=8)
 
 
 def args_lin(parser):
@@ -94,4 +94,4 @@ def args_xgb(parser):
 
     group = parser.add_argument_group("Training Configuration")
     group.add_argument("--num_boost_round", type=int, default=1000)
-    group.add_argument("--cpus_per_trial", type=int, default=8)
+    # group.add_argument("--cpus_per_trial", type=int, default=8)
