@@ -89,7 +89,7 @@ def add_stress_test_param(args):
     for i in it_keys:
         if i in d.keys():
             d[i] = 10 # change to 10 epochs
-    d["num_samples"] = 1
+    d["num_samples"] = 2  #to test parallelism.
 
 
 if __name__ == "__main__":
