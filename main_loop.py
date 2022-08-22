@@ -93,7 +93,6 @@ def add_stress_test_param(args):
 
 
 if __name__ == "__main__":
-
     parser = ArgumentParser(description=
         "Master Thesis Mathias Ruoss - Option Return Classification: "
         "Loop over all train, val splits and predict on test set for given model."

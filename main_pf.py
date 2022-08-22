@@ -118,7 +118,7 @@ def aggregate(args):
         no_alloc_value = 0
         concat_df[f"weights_{c}"] = np.select(condlist, choicelist, no_alloc_value)
 
-    # Only calculate weighted average for numerical columns.
+    # Only calculate weighted average for numerical columns (have to drop 'date').
     col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
     print("Done!")
 
@@ -139,19 +139,29 @@ def aggregate(args):
     # experiment directory 'exp_dir'.
     pf_dir = exp_dir/"portfolios"
     try: # raise error if 'portfolio' folder exists already
-        pf_dir.mkdir(exist_ok=True, parents=False) # raise error if parents are missing.
-        for c, df in agg_dict.items():
-            df.to_csv(exp_dir/pf_dir/f"agg_df_{c}.csv")
+        pf_dir.mkdir(exist_ok=False, parents=False) # raise error if parents are missing.
+        for class_c, df in agg_dict.items():
+            df.to_csv(pf_dir/f"{class_c}.csv")
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
         raise FileExistsError("Directory 'portfolios' already exists. Will not "
         "touch folder and exit.") from err
+
+    # Long-Short PF (highest class (long) - lowest class (short))
+    short_class = classes[0] #should be 0
+    assert short_class == 0, "Class of short portfolio not 0. Check why."
+    long_class = classes[-1] #should be 2 for binary, 3 for 'multi3', etc.
+    print(f"Subtract short portfolio of class {short_class} from long portfolio "
+            f"of class {long_class} portfolio and save to long{long_class}short{short_class}.csv...")
+    # Subtract short from long portfolio.
+    long_short_df = (agg_dict[f"class{long_class}"] - agg_dict[f"class{short_class}"])
+    assert ((long_short_df["pred"] == (long_class - short_class)).all() and #'pred' should be long_class - short_class
+            (long_short_df["if_long_short"] == 2).all()) #'if_long_short' should be 2 (1 - (-1) = 2)
+    # Drop one-hot "weight" columns here.
+    cols_to_keep = [col for col in long_short_df.columns.tolist() if "weight" not in col]
+    long_short_df = long_short_df[cols_to_keep]
+    long_short_df.to_csv(pf_dir/f"long{long_class}short{short_class}.csv")
     print("Done!")
     print("All done!")
-
-    # # Get geometric mean of Long-Short PF
-    # long_short_monthly = (agg_dict[f"class{classes[-1]}"] - agg_dict[f"class{classes[0]}"])
-    # cols_to_keep = [col for col in long_short_monthly.columns.tolist() if "weight" not in col]
-    # long_short_monthly = long_short_monthly[cols_to_keep]
 
 
 def performance(args):
@@ -179,7 +189,7 @@ def performance(args):
         except PermissionError as err:
             raise PermissionError("The 'portfolios' subfolder must not contain directories.") from err
             # from err necessary for chaining
-        dfs.append(df["option_ret"].rename(file.name[7:-4])) #rename Series to 'class0', 'class1', etc.
+        dfs.append(df["option_ret"].rename(file.name[:-4])) #rename Series to filename from portfolios.
     dfs = pd.concat(dfs, axis=1) # Series names -> column names
     # Capitalize 'date' index name for plot axis label.
     dfs.index = dfs.index.rename("Date")
@@ -259,12 +269,13 @@ def performance(args):
 
     #Max Drawdown Days.
     maxdd_days = []
-    for columname in dfs.columns:
-        col_summary = qs.stats.drawdown_details(qs.stats.to_drawdown_series(dfs))[columname].sort_values(by="max drawdown", ascending=True)
+    for columname in dfsdd.columns:
+        # Important to take 'dfsdd' here and not 'dfs'...
+        col_summary = qs.stats.drawdown_details(qs.stats.to_drawdown_series(dfsdd))[columname].sort_values(by="max drawdown", ascending=True)
         # Divide by 100 because qs.stats.drawdown_details provides maxdd in percent.
-        assert col_summary["max drawdown"].iloc[0] / 100 == maxdd[columname], "Max Drawdown of qs is not equal our manually calculated Max. DD"
+        assert col_summary["max drawdown"].iloc[0] / 100 == maxdd[columname], f"Max Drawdown of column {columname} is not equal our manually calculated Max. DD"
         maxdd_days.append(col_summary["days"].iloc[0])
-    maxdd_days = pd.Series(maxdd_days, index=dfs.columns, name="Max DD days")
+    maxdd_days = pd.Series(maxdd_days, index=dfsdd.columns, name="Max DD days")
     maxdd_days_str = maxdd_days.apply(lambda x: f'{x: .0f}')
 
     # Calmar Ratio.
@@ -318,4 +329,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     
-    args.mode(args) #TODO: run or aggregate?
+    args.mode(args) #aggreagte or performance
