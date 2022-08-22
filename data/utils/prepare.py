@@ -208,7 +208,6 @@ if __name__ == "__main__":
     parser.add_argument("--path", type=str, 
                     default=path,
                     help="Path where all the three required data files should lie.")
-    pdb.set_trace()
     parser.add_argument("--fill_fn", type=str, default="mean", choices=["mean", "median"],
                         help="whether mean or median should be used for filling NaN values")
     parser.add_argument("--fill_na", action="store_true", help="fill na values "

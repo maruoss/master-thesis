@@ -23,7 +23,7 @@ def feature_engineer(data):
     # Vega: scale by spotprice
     data["vega"] = data["vega"] / data["spotprice"] #following Bali et al. (2021)
 
-    # Time to Maturity: cale by number of days in year: 365
+    # Time to Maturity: scale by number of days in year: 365
     data["days_to_exp"] = data["days_to_exp"] / 365
 
     # Moneyness: Strike / Spot (K / S)
@@ -55,7 +55,7 @@ def binary_categorize(y):
 
 
 # Multiclass y label generator.
-def multi_categorize(y: float, classes:int):
+def multi_categorize(y: float, classes: int):
     """
     Creates categorical labels from continuous values.
 
@@ -85,7 +85,28 @@ def multi_categorize(y: float, classes:int):
         elif (y < -0.05):
             return 0
         else:
-            return 2
+            return 2 # all returns \elin [-0.025, 0.025]
+    # elif classes==10:
+    #     if y > 0.05:
+    #         return 9
+    #     elif (y > 0.04 and y <= 0.05):
+    #         return 8
+    #     elif (y > 0.03 and y <= 0.04):
+    #         return 7
+    #     elif (y > 0.02 and y <= 0.03):
+    #         return 6
+    #     elif (y > 0.01 and y <= 0.02):
+    #         return 5
+    #     elif (y >= -0.02 and y < -0.01):
+    #         return 3
+    #     elif (y >= -0.03 and y < -0.02):
+    #         return 2
+    #     elif (y >= -0.04 and y < -0.03):
+    #         return 1
+    #     elif (y >= -0.05 and y < -0.05):
+    #         return 0
+    #     else:
+    #         return 4
     else:
         raise ValueError("Only multi for 3 or 5 classes implemented right now.")
 
