@@ -95,9 +95,18 @@ def check_eoy(concat_df: pd.DataFrame, eoy_indeces: np.ndarray):
 
 
 def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
-    """Requires concatenated df with option returns and its predictions. labelfn_exp
-    is the label_fn of the experiment and should be a string 'binary' or 
-    'multi{num_classes}'."""
+    """Checks whether the predictions contain at least one of the smallest and
+    at least one of the largest class in each month (so that we can form Long-
+    Short Portfolios.)
+
+    Arguments: 
+        concat_df:      Dataframe with option returns and the direction prediction. 
+        labelfn_exp:    The label_fn of the experiment. Should be a string 'binary' 
+                        or 'multi{number of classes}'.
+    Returns:
+        max_real:       Max realized prediction over all the data.
+        min_real:       Min realized prediction over all the data.
+        """
     # Min pred value theoretically.
     min_theor = 0
     if labelfn_exp=="binary":
@@ -109,7 +118,7 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     max_real = max_real_series.max()
     print("Max prediction realized is:", max_real)
     assert (max_real == max_real_series).all() and max_theor == max_real, (
-        f"Not all max class predictions are equal in each month or "
+        f"The maximum class predicted is not equal to the theoretical maximum class or "
         f"the maximum class {max_theor} was not predicted in at least one month.")
     # Min pred value realized per month.
     min_real_series = concat_df.groupby("date")["pred"].min()
@@ -121,20 +130,20 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     return max_real, min_real
 
 
-def various_tests(concat_df: pd.DataFrame, col_list: list, classes: list, agg_dict: dict):
-    """Perform various tests to check our results."""
-
-    # Test: compare agg_dict with agg_dict calculated via 'weighted_avg' function 
-    # and not via 'np.average'.
+def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list):
+    """Perform various sanity checks on our monthly aggregated results in agg_dict."""
+    # Test1: Compare agg_dict with agg_dict2, calculated via 'weighted_avg' function 
+    # and not via 'np.average'. They should yield the same (up to small precision).
     agg_dict2 = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
         agg_dict2[f"class{c}"] = agg_df
     for key in agg_dict.keys():
         pd.testing.assert_frame_equal(agg_dict[key], agg_dict2[key])
+    print("Test1: Successful! Weighted_avg function seems to yield same as np.average.")
 
-    # Test: check whether first and last month aggregation yield same as
-    # first and last entries of agg_dict.
+    # Test2: Check whether first and last month aggregation yield same as
+    # first and last entries of agg_dict for each class.
     first_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[0]]
     last_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[-1]]
     for k in col_list:
@@ -143,14 +152,35 @@ def various_tests(concat_df: pd.DataFrame, col_list: list, classes: list, agg_di
             assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict[f"class{c}"].iloc[-1][k]
             assert weighted_avg(first_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[0][k]
             assert weighted_avg(last_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[-1][k]
+    print("Test2: Successful! First and last month individual aggregation yield the same "
+         "as first and last entries of the aggregated dataframe for the respective class.")
 
-    # Test: if "pred" column in aggregated df's corresponds to class in each row (month).
+    # Test3: If "pred" column in aggregated df's corresponds to class in each row (month).
     for c in classes:
         assert (agg_dict[f"class{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
-    # Test if short and low portfolios are aggregated correctly.
+    print("Test3: Successful! Aggregated 'pred' column is equal to the class in each month.")
+    # Test4: If short and low portfolios are aggregated correctly.
     assert ((agg_dict[f"class{classes[0]}"]["if_long_short"] == -1).all() and
             (agg_dict[f"class{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
             "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
+    print("Test4: Successful! Both the lowest class and the highest class corrrespond "
+        "to -1 and 1 in the column 'if_long_short', respectively.")
+    # Test5: Check if one-hot encoding columns correspond to 'preds' and 'if_long_short'.
+    for c in classes:
+        for k in classes:
+            if c == k:
+                assert (agg_dict[f"class{c}"][f"weights_{k}"] == 1).all()
+                assert (agg_dict[f"class{c}"]["pred"] == k).all()
+                if c==classes[0]:
+                    assert (agg_dict[f"class{c}"]["if_long_short"] == -1).all()
+                elif c==classes[-1]:
+                    assert (agg_dict[f"class{c}"]["if_long_short"] == 1).all()
+                else:
+                    assert (agg_dict[f"class{c}"]["pred"] == k).all()
+            else:
+                assert (agg_dict[f"class{c}"][f"weights_{k}"] == 0).all()
+    print("Test5: Successful! Check whether one-hot encoding columns make sense "
+        "with the columns 'preds' and 'if_long_short'.")
 
 
 # Weighted average functions used to aggreagte portfolios. We use np.average.

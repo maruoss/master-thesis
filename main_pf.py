@@ -1,14 +1,10 @@
 from argparse import ArgumentParser
-from datetime import datetime, timedelta
 from pathlib import Path
-import pdb
-from turtle import title
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas.tseries.offsets import MonthEnd
-import yfinance as yf
 import dataframe_image as dfi
 import quantstats as qs
 
@@ -19,6 +15,10 @@ from utils.preprocess import YearMonthEndIndeces
 
 
 def aggregate(args):
+    """Create aggregated monthly csv files in a new 'portfolios' subfolder within
+    the logs/experiment_folder. The aggregation is done by equally weighting
+    each option for the respective month."""
+    print("Start aggregation of predictions in each month...")
     # Get experiment folder path 'exp_dir'.
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
@@ -26,12 +26,18 @@ def aggregate(args):
     assert len(matches_list) == 1, "there exists more than 1 folder with given expid!"
     exp_dir = matches_list[0]
     # Move all predictions to 'predictions' folder with the expdir folder.
+    print("Find all 'predictions{year}' files in the subfolders of the experiment "
+    "and copy to 'predictions' folder...")
     collect_preds(exp_dir)
+    print("Done!")
     #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
     # Read all prediction .csv and save as "all_pred.csv" in exp_dir.
+    print("Read all prediction .csv files in a dataframe and save as 'all_pred.csv'...")
     preds_concat_df = concat_and_save_preds(exp_dir)
+    print("Done!")
 
     # Get path where datasets reside:
+    print("Concat the dataframe with the respective option data...")
     datapath = Path.cwd()/"data"
     
     # Check whether small, med, big are all equal (whether we predicted on same 
@@ -75,8 +81,11 @@ def aggregate(args):
 
     # Set df_small index back to main index.
     concat_df = concat_df.set_index("index", drop=True)
+    print("Done!")
 
-    # Create weight column for lowest and highest predicted classes (for L-S portfolio)
+    # Create single weight column 'if_long_short' with -1 for lowest and 1 for 
+    # highest predicted class. Rest is 0.
+    print("Create weight columns for each class...")
     max_pred, min_pred = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     classes = sorted(concat_df["pred"].unique(), reverse=False) #ascending order
     assert max_pred == classes[-1] and min_pred == classes[0], ("min and max preds "
@@ -102,7 +111,7 @@ def aggregate(args):
     assert (test == concat_df["if_long_short"]).all(), "Two methods to create weightings do not yield same result."
     # ---
 
-    # Create separate weight column for each class in concat_df.
+    # Create separate weight columns for each class in concat_df.
     for c in classes:
         condlist = [concat_df["pred"] == c]
         choicelist = [1]
@@ -110,36 +119,46 @@ def aggregate(args):
         concat_df[f"weights_{c}"] = np.select(condlist, choicelist, no_alloc_value)
 
     # Only calculate weighted average for numerical columns.
-    col_list = [val for val in concat_df.columns.tolist() if "weight" not in val 
-                and "date" not in val]
+    col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
+    print("Done!")
 
-    # Collect all portfolios in a dictionary with key 'class0', 'class1', etc.
+    # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
+    print("Aggregate for each class and collect the dataframes...")
     agg_dict = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column, col_list, f"weights_{c}")
         agg_dict[f"class{c}"] = agg_df
-
+    print("Done!")
     # Perform various tests to check our calculations.
-    various_tests(concat_df, col_list, classes, agg_dict)
+    print("Sanity test the aggregated results...")
+    various_tests(agg_dict, concat_df, col_list, classes)
+    print("Done!")
 
+    print("Save each dataframe in the 'portfolios' subfolder...")
     # Save all aggregated dataframes per class to 'portfolios' subfolder within the 
     # experiment directory 'exp_dir'.
     pf_dir = exp_dir/"portfolios"
-    try: #if portfolios folder doesnt exist...
-        pf_dir.mkdir(exist_ok=False, parents=False) # raise Error if parents are missing.
+    try: # raise error if 'portfolio' folder exists already
+        pf_dir.mkdir(exist_ok=True, parents=False) # raise error if parents are missing.
         for c, df in agg_dict.items():
             df.to_csv(exp_dir/pf_dir/f"agg_df_{c}.csv")
-    except FileExistsError: # portfolios folder already exists, do nothing.
-        print("Directory 'portfolios' already exists. Will leave as is and continue with the code.")
+    except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
+        raise FileExistsError("Directory 'portfolios' already exists. Will not "
+        "touch folder and exit.") from err
+    print("Done!")
+    print("All done!")
 
     # # Get geometric mean of Long-Short PF
     # long_short_monthly = (agg_dict[f"class{classes[-1]}"] - agg_dict[f"class{classes[0]}"])
     # cols_to_keep = [col for col in long_short_monthly.columns.tolist() if "weight" not in col]
     # long_short_monthly = long_short_monthly[cols_to_keep]
 
-    # TODO: create LaTeX output for portfolio mean, sd, sharpe ratio as in Bali (2021)?
 
 def performance(args):
+    """Read the monthly aggregated portfolios from the 'portfolios' subfolder
+    within the experiment directory and procude performance statistics in a csv,
+    png and latex file. Also produce a plot with the performance of each portfolio."""
+    print("Starting performance evaluation of portfolios...")
     sns.set_style("whitegrid") # style must be one of white, dark, whitegrid, darkgrid, ticks
     sns.set_context('paper', font_scale=2.0) # set fontsize scaling for labels, axis, legend, automatically moves legend
 
@@ -151,6 +170,7 @@ def performance(args):
     exp_path = matches_list[0]
 
     # Read aggregated portfolios.
+    print("Reading aggregated portfolios from 'portfolios' folder...")
     path_portfolios = exp_path/"portfolios"
     dfs = []
     for file in Path.iterdir(path_portfolios):
@@ -163,20 +183,23 @@ def performance(args):
     dfs = pd.concat(dfs, axis=1) # Series names -> column names
     # Capitalize 'date' index name for plot axis label.
     dfs.index = dfs.index.rename("Date")
+    print("Done!")
 
     # Plot equity line and save to .png.
+    print("Plotting equity lines...")
     dfs_cumprod = (1. + dfs).cumprod()
     dfs_cumprod.plot(figsize=(15, 10), alpha=1.0, linewidth=2.5, ylabel="Portfolio Value",
                     title="Cumulative Return of Classification Portfolios")
     plt.tight_layout() # remove whitespace around plot
-
     # Make 'results' subfolder.
     path_results = exp_path/"results"
     path_results.mkdir(exist_ok=True, parents=False)
     plt.savefig(path_results/"plot.png")
+    print("Done!")
 
     # Collect performance statistics. 
     # RISKFREE rate assumed zero here. Not implemented in the formulas.
+    print("Calculating portfolio performance statistics...")
     perfstats = []
     periods = 12 # we have monthly (excess) returns (as rf assumed 0.)
 
@@ -204,6 +227,10 @@ def performance(args):
     # Annualized Sharpe Ratio.
     sharpe_ann = mean_ann / vol_ann
     sharpe_ann_str = sharpe_ann.apply(lambda x: f'{x: .3f}').rename("Sharpe Ratio (ann.)")
+
+    # Geometric annualized Sharpe Ratio
+    sharpe_ann_geom = cagr / vol_ann
+    sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. Sharpe Ratio (ann.)")
 
     # Calculate alpha and beta w.r.t. SP500 Total Return index (data from yfinance, see data/utils/sp500.py)
     # Read data from /data.
@@ -250,49 +277,15 @@ def performance(args):
     kurt = dfs.kurtosis()
     kurt_str = kurt.apply(lambda x: f'{x: .3f}').rename("Kurtosis")
 
-    # cumr = qs.stats.comp(dfs).rename("Cumulative Return")
-    # cumr = cumr.apply(lambda x: f'{x: .2%}')
-    # cagr = qs.stats.cagr(dfs).rename("CAGR") # assumes rf = 0
-    # cagr = cagr.apply(lambda x: f'{x: .2%}')
-    # vol = qs.stats.volatility(dfs, periods=periods).rename("Volatility (ann.)") # daily to annualized vol.
-    # vol = vol.apply(lambda x: f'{x: .2%}')
-    # sharpe = qs.stats.sharpe(dfs).rename("Sharpe Ratio")
-    # sharpe = sharpe.apply(lambda x: f'{x: .2f}')
-    # maxdd = qs.stats.max_drawdown(dfs).rename("Max Drawdown")
-    # maxdd = maxdd.apply(lambda x: f'{x: .2%}')
-    # dd_days = []
-    # for columname in dfs.columns:
-    #     dd_days.append(qs.stats.drawdown_details(qs.stats.to_drawdown_series(dfs))[columname].sort_values(by="max drawdown", ascending=True)["days"].iloc[0])
-    # dd_days = pd.Series(dd_days, index=dfs.columns, name="Max DD days")
-    # dd_days = dd_days.apply(lambda x: f'{x: .0f}')
-    # calmar = qs.stats.calmar(dfs).rename("Calmar Ratio")
-    # calmar = calmar.apply(lambda x: f'{x: .2f}')
-    # skew = qs.stats.skew(dfs).rename("Skewness")
-    # skew = skew.apply(lambda x: f'{x: .2f}')
-    # kurt = qs.stats.kurtosis(dfs).rename("Kurtosis")
-    # kurt = kurt.apply(lambda x: f'{x: .2f}')
-
-    # # Calculate alpha, betas.
-    # X = np.array([np.ones_like(dfs.DJIA), dfs.DJIA]).T
-    # alphabeta = np.linalg.inv(X.T@X)@X.T@dfs
-    # alpha = alphabeta.iloc[0, :] * periods
-    # beta = alphabeta.iloc[1, :]
-    # alpha = alpha.rename("Alpha")
-    # beta = beta.rename("Beta")
-    # alpha = alpha.apply(lambda x: f'{x: .2f}')
-    # beta = beta.apply(lambda x: f'{x: .2f}')
-
-    #append more stats first here...
-
     # perfstats += [cumr, cagr, vol, sharpe, maxdd, dd_days, calmar, skew, kurt, alpha, beta] # then here.
-    perfstats += [cumr_str, cagr_str, mean_ann_str, vol_ann_str, sharpe_ann_str, maxdd_str, maxdd_days_str, calmar_str, skew_str, kurt_str, alphas_str, betas_str]
+    perfstats += [cumr_str, cagr_str, mean_ann_str, vol_ann_str, sharpe_ann_str, sharpe_ann_geom_str, maxdd_str, maxdd_days_str, calmar_str, skew_str, kurt_str, alphas_str, betas_str]
 
+    print("Save performance statistics to .csv, .png and .txt...")
     # Save results to 'results' subfolder.
     perfstats = pd.concat(perfstats, axis=1)
     perfstats.to_csv(path_results/"perfstats.csv")
     # dfi only accepts strings as paths:
     dfi.export(perfstats, str(path_results/"perfstats.png"))
-    # dfi.export(perfstats, os.path.join(path_results, "perfstats.png")) #Alternative
 
     # Export latex code for table.
     with (path_results/"latex.txt").open("w") as text_file:
@@ -301,9 +294,8 @@ def performance(args):
         text_file.write("% Same table transposed:\n")
         text_file.write("\n")
         text_file.write(perfstats.T.style.to_latex())
-    # Alternative via Pathlib (but have cannot chain inputs, I believe?).
-    # latex_file = (path_results/"latex2.txt")
-    # latex_file.write_text(perfstats.style.to_latex())
+    print("Done!")
+    print("All done!")
 
 
 if __name__ == "__main__":
