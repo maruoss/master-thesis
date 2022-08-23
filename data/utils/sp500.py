@@ -33,7 +33,7 @@ def download_sp500TR_prices(args):
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="Downloads SP500 Total Return Index prices"
-    " from Yahoo Finance and saves to given path."
+    " from Yahoo Finance and saves to given path.")
      
     # Data path where 'sp500_opt_ret.parquet' resides, to download same time period.
     path = Path.cwd()/"data"

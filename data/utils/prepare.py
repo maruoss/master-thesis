@@ -146,7 +146,7 @@ def prepare_dataset(args):
     final_df = pd.concat([final_df, transformed_df], axis=1)
     # Sort values by date! (secondly by secid -> but better to shuffle within date later?)
     final_df = final_df.sort_values(["date", "secid"]).reset_index(drop=True)
-    # Remove useless columns for data analysis.
+    # Remove columns useless for data analysis.
     final_df = final_df.drop(["secid", "optionid", "exdate", "sdate", "edate", "permno", "index"], axis=1)
     print("Done!")
 
