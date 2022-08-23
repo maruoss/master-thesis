@@ -6,11 +6,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas.tseries.offsets import MonthEnd
-import dataframe_image as dfi
 import quantstats as qs
 
 from data.utils.convert_check import small_med_big_eq
-from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, get_and_check_min_max_pred, various_tests, weighted_means_by_column
+from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, export_dfi, get_and_check_min_max_pred, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces
 
 
@@ -288,15 +287,7 @@ def performance(args):
     perfstats = pd.concat(perfstats, axis=1)
     perfstats.to_csv(path_results/"perfstats.csv")
     # dfi only accepts strings as paths:
-    try:
-        dfi.export(perfstats, str(path_results/"perfstats.png"))
-    except OSError:
-        print("Exporting performance stats via chrome failed. Trying with "
-            "table conversion='matplotlib'.")
-    try:
-        dfi.export(perfstats, str(path_results/"perfstats.png"), table_conversion="matplotlib")
-    except OSError as err:
-        raise OSError("Try different dataframe .png exporter.") from err
+    export_dfi(perfstats, str(path_results/"perfstats.png"))
 
     # Export latex code for table.
     with (path_results/"latex.txt").open("w") as text_file:

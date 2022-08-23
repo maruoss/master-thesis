@@ -1,8 +1,8 @@
 from pathlib import Path
 import shutil
 import numpy as np
-
 import pandas as pd
+import dataframe_image as dfi
 
 
 def collect_preds(exp_dir: Path):
@@ -215,3 +215,16 @@ def weighted_means_by_column2(x, cols, w):
         series["pred"] = int(w[-1])
         return series
 # ---
+
+def export_dfi(perfstats: pd.DataFrame, path: str) -> None:
+    try:
+        dfi.export(perfstats, path)
+        return
+    except OSError:
+        print("Exporting performance stats via chrome failed. Trying with "
+            "table conversion='matplotlib'...")
+    try:
+        dfi.export(perfstats, path, table_conversion="matplotlib")
+        return
+    except OSError as err:
+        raise OSError("Try different dataframe .png exporter.") from err
