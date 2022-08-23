@@ -87,14 +87,12 @@ def aggregate(args):
     # highest predicted class. Rest is 0.
     print("Create weight columns for each class...")
     classes = sorted(concat_df["pred"].unique(), reverse=False) #ascending order
-    max_pred, min_pred = get_and_check_min_max_pred(concat_df, args_exp["label_fn"], classes)
-
+    max_pred, min_pred = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     # 1.5x faster than pd.map...
     condlist = [concat_df["pred"] == min_pred, concat_df["pred"] == max_pred]
     choicelist = [-1, 1]
     no_alloc_value = 0
     concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
-    
     # Create separate weight columns for each class in concat_df.
     for c in classes:
         condlist = [concat_df["pred"] == c]
@@ -105,6 +103,11 @@ def aggregate(args):
     # Only calculate weighted average for numerical columns (have to drop 'date').
     col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
     print("Done!")
+    # For each class print out months where no prediction was allocated for that class.
+    # This will yield 0 division error later when trying to average the class within a month.
+    for c in classes:
+        sum_onehot = concat_df.groupby("date")[f"weights_{c}"].sum()
+    print(f"For class {c}, the following months have no prediction:", sum_onehot[sum_onehot==0])
 
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
