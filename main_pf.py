@@ -260,7 +260,10 @@ def performance(args):
         # Important to take 'dfsdd' here and not 'dfs'...
         col_summary = qs.stats.drawdown_details(qs.stats.to_drawdown_series(dfsdd))[columname].sort_values(by="max drawdown", ascending=True)
         # Divide by 100 because qs.stats.drawdown_details provides maxdd in percent.
-        assert col_summary["max drawdown"].iloc[0] / 100 == maxdd[columname], f"Max Drawdown of column {columname} is not equal our manually calculated Max. DD"
+        qs_dd = col_summary["max drawdown"].iloc[0] / 100
+        assert (qs_dd - maxdd[columname]) < 0.0001, (f"Max Drawdown of column {columname}: {qs_dd} calculated by quantstats"
+        f"is not equal our manually calculated Max. DD {maxdd[columname]}")
+
         maxdd_days.append(col_summary["days"].iloc[0])
     maxdd_days = pd.Series(maxdd_days, index=dfsdd.columns, name="Max DD days")
     maxdd_days_str = maxdd_days.apply(lambda x: f'{x: .0f}')

@@ -188,16 +188,30 @@ def weighted_means_by_column(x, cols, w):
     """ This takes a DataFrame and averages each data column (cols)
         while weighting observations by column w.
     """
-    return pd.Series([np.average(x[c], weights=x[w] ) for c in cols], cols)
+    try:
+        return pd.Series([np.average(x[c], weights=x[w] ) for c in cols], cols)
+    except ZeroDivisionError:
+        series = pd.Series(0, cols) # set all values to 0 for those months with no prediction.
+        series[w] = 1 #set weight column to 1 still.
+        series["pred"] = int(w[-1])
+        return series
 
 
 # Only used for testing:
 def weighted_avg(df, values, weights):
+    if df[weights].sum() == 0:
+        raise ZeroDivisionError
     return sum(df[values] * df[weights]) / df[weights].sum()
 
 def weighted_means_by_column2(x, cols, w):
     """ This takes a DataFrame and averages each data column (cols)
         while weighting observations by column w.
     """
-    return pd.Series([weighted_avg(x, c, weights=w) for c in cols], cols)
+    try:
+        return pd.Series([weighted_avg(x, c, weights=w) for c in cols], cols)
+    except ZeroDivisionError:
+        series = pd.Series(0, cols) # set all values to 0 for those months with no prediction.
+        series[w] = 1 #set weight column to 1 still.
+        series["pred"] = int(w[-1])
+        return series
 # ---
