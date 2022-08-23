@@ -7,6 +7,7 @@ dependencies:
   - python=3.8.5
   - pandas
   - matplotlib
+  - seaborn
   - numpy
   - notebook
   - scikit-learn
@@ -19,6 +20,7 @@ dependencies:
   - quantstats
   - tensorboard
   - yfinance
+  - dataframe_image
   - pip:
     - pyarrow==8.0.0
     - ray==1.13.0

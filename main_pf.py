@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 from pathlib import Path
+import pdb
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,9 +9,8 @@ from pandas.tseries.offsets import MonthEnd
 import dataframe_image as dfi
 import quantstats as qs
 
-from arguments import load_args
 from data.utils.convert_check import small_med_big_eq
-from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, get_and_check_min_max_pred, various_tests, weighted_avg, weighted_means_by_column, weighted_means_by_column2
+from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, get_and_check_min_max_pred, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces
 
 
@@ -23,7 +23,7 @@ def aggregate(args):
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
     matches_list = list(matches)
-    assert len(matches_list) == 1, "there exists more than 1 folder with given expid!"
+    assert len(matches_list) == 1, "there exists none or more than 1 folder with given expid!"
     exp_dir = matches_list[0]
     # Move all predictions to 'predictions' folder with the expdir folder.
     print("Find all 'predictions{year}' files in the subfolders of the experiment "
@@ -86,31 +86,15 @@ def aggregate(args):
     # Create single weight column 'if_long_short' with -1 for lowest and 1 for 
     # highest predicted class. Rest is 0.
     print("Create weight columns for each class...")
-    max_pred, min_pred = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     classes = sorted(concat_df["pred"].unique(), reverse=False) #ascending order
-    assert max_pred == classes[-1] and min_pred == classes[0], ("min and max preds "
-                                                                "are not attained")
-    # Delete below in production---
-    class_weight_map = {}
-    for c in range(len(classes)):
-        if c == min_pred:
-            class_weight_map[c] = -1
-        elif c == max_pred:
-            class_weight_map[c] = 1
-        else:
-            class_weight_map[c] = 0
-    # Apply class map.
-    test  = concat_df["pred"].map(class_weight_map)
-    # ---
+    max_pred, min_pred = get_and_check_min_max_pred(concat_df, args_exp["label_fn"], classes)
+
     # 1.5x faster than pd.map...
     condlist = [concat_df["pred"] == min_pred, concat_df["pred"] == max_pred]
     choicelist = [-1, 1]
     no_alloc_value = 0
     concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
-    # Delete below in production...
-    assert (test == concat_df["if_long_short"]).all(), "Two methods to create weightings do not yield same result."
-    # ---
-
+    
     # Create separate weight columns for each class in concat_df.
     for c in classes:
         condlist = [concat_df["pred"] == c]

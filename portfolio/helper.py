@@ -94,7 +94,7 @@ def check_eoy(concat_df: pd.DataFrame, eoy_indeces: np.ndarray):
     return True
 
 
-def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
+def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str, classes: list):
     """Checks whether the predictions contain at least one of the smallest and
     at least one of the largest class in each month (so that we can form Long-
     Short Portfolios.)
@@ -127,6 +127,11 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     assert (min_real == min_real_series).all() and min_theor == min_real, (
                 f"Not all min class predictions are equal in each month "
                 f"the minimum class {min_theor} was not predicted in at least one month.")
+    # For each class print out months where no prediction was allocated for that class.
+    # This will yield 0 division error later when trying to average the class within a month.
+    for c in classes:
+        sum_onehot = concat_df.groupby("date")[f"weights_{c}"].sum()
+        print(f"For class {c}, the following months have no prediction:", sum_onehot[sum_onehot==0])
     return max_real, min_real
 
 
