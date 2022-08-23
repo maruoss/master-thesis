@@ -177,6 +177,8 @@ def performance(args):
             raise PermissionError("The 'portfolios' subfolder must not contain directories.") from err
             # from err necessary for chaining
         dfs.append(df["option_ret"].rename(file.name[:-4])) #rename Series to filename from portfolios.
+    # Sort list in descending order first -> class0, class1, ..., etc.
+    dfs = sorted(dfs, key=lambda x: x.name)
     dfs = pd.concat(dfs, axis=1) # Series names -> column names
     # Capitalize 'date' index name for plot axis label.
     dfs.index = dfs.index.rename("Date")
@@ -286,7 +288,15 @@ def performance(args):
     perfstats = pd.concat(perfstats, axis=1)
     perfstats.to_csv(path_results/"perfstats.csv")
     # dfi only accepts strings as paths:
-    dfi.export(perfstats, str(path_results/"perfstats.png"))
+    try:
+        dfi.export(perfstats, str(path_results/"perfstats.png"))
+    except OSError:
+        print("Exporting performance stats via chrome failed. Trying with "
+            "table conversion='matplotlib'.")
+    try:
+        dfi.export(perfstats, str(path_results/"perfstats.png"), table_conversion="matplotlib")
+    except OSError as err:
+        raise OSError("Try different dataframe .png exporter.") from err
 
     # Export latex code for table.
     with (path_results/"latex.txt").open("w") as text_file:
