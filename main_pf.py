@@ -107,7 +107,7 @@ def aggregate(args):
     # This will yield 0 division error later when trying to average the class within a month.
     for c in classes:
         sum_onehot = concat_df.groupby("date")[f"weights_{c}"].sum()
-    print(f"For class {c}, the following months have no prediction:", sum_onehot[sum_onehot==0])
+        print(f"For class {c}, the following months have no prediction:", sum_onehot[sum_onehot==0])
 
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
