@@ -3,7 +3,7 @@ import shutil
 import numpy as np
 import pandas as pd
 import dataframe_image as dfi
-
+from tqdm import tqdm
 
 def collect_preds(exp_dir: Path):
     """Moves all predictions????.csv to a 'predictions' folder within the
@@ -107,61 +107,75 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
         max_real:       Max realized prediction over all the data.
         min_real:       Min realized prediction over all the data.
         """
+    classes = sorted(concat_df["pred"].unique(), reverse=False) #ascending order
     # Min pred value theoretically.
     min_theor = 0
     if labelfn_exp=="binary":
         max_theor = 1 
     else: #multi3, multi5, multi10 -> take (3, 5, 10) - 1
         max_theor = int(labelfn_exp[5:]) - 1 # 3 classes -> 0, 1, 2
-    # Max pred value realized per month.
-    max_real_series = concat_df.groupby("date")["pred"].max()
-    max_real = max_real_series.max()
-    print("Max prediction realized is:", max_real)
-    assert (max_real == max_real_series).all() and max_theor == max_real, (
-        f"The maximum class predicted is not equal to the theoretical maximum class or "
-        f"the maximum class {max_theor} was not predicted in at least one month.")
+    assert len(classes) == max_theor + 1, "At least one class is not predicted at all."
+    assert classes[0] == min_theor and classes[-1] == max_theor, "List 'classes' is not sorted in ascending order."
     # Min pred value realized per month.
     min_real_series = concat_df.groupby("date")["pred"].min()
     min_real = min_real_series.min()
-    print("Min prediction realized is:", min_real)
-    assert (min_real == min_real_series).all() and min_theor == min_real, (
-                f"Not all min class predictions are equal in each month "
-                f"the minimum class {min_theor} was not predicted in at least one month.")
-    return max_real, min_real
+    # print("Min prediction realized is:", min_real)
+    assert min_theor == min_real, (
+        "Not a single month has the prediction of the theoretical minimum class.")
+    months_no_min = min_real_series[min_real_series != min_real].count()
+    print(f"Number of months where Short class {min_real} is not predicted:", 
+            months_no_min, "out of", f"{len(min_real_series)}.")
+    # Max pred value realized per month.
+    max_real_series = concat_df.groupby("date")["pred"].max()
+    max_real = max_real_series.max()
+    # max_real_series[max_real_series != max_real].index.strftime("%Y-%m-%d").to_list()
+    assert max_theor == max_real, (
+        "Not a single month has the prediction of the theoretical maximum class.")
+    months_no_max = max_real_series[max_real_series != max_real].count()
+    print(f"Number of months where Long class {max_real} is not predicted:", 
+            months_no_max, "out of", f"{len(max_real_series)}.")
+    return max_real, min_real, classes
 
 
-def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list):
+def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list, class_ignore: dict):
     """Perform various sanity checks on our monthly aggregated results in agg_dict."""
     # Test1: Compare agg_dict with agg_dict2, calculated via 'weighted_avg' function 
     # and not via 'np.average'. They should yield the same (up to small precision).
     agg_dict2 = {}
-    for c in classes:
+    for c in tqdm(classes):
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
         agg_dict2[f"class{c}"] = agg_df
     for key in agg_dict.keys():
         pd.testing.assert_frame_equal(agg_dict[key], agg_dict2[key])
-    print("Test1: Successful! Weighted_avg function seems to yield same as np.average.")
+    print("Test1: Successful! Weighted_avg function seems to yield the same as np.average.")
 
-    # Test2: Check whether first and last month aggregation yield same as
-    # first and last entries of agg_dict for each class.
-    first_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[0]]
-    last_month = concat_df.loc[concat_df["date"] == concat_df["date"].iloc[-1]]
-    for k in col_list:
-        for c in classes:
-            assert np.average(first_month[k], weights=first_month[f"weights_{c}"]) == agg_dict[f"class{c}"].iloc[0][k]
-            assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict[f"class{c}"].iloc[-1][k]
-            assert weighted_avg(first_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[0][k]
-            assert weighted_avg(last_month, k, f"weights_{c}") == agg_dict2[f"class{c}"].iloc[-1][k]
-    print("Test2: Successful! First and last month individual aggregation yield the same "
+    # COPY CRUCIAL HERE! Otherwise, input df will be altered...
+    agg_dict_copy = agg_dict.copy() #copy because we drop class_ignore months for each class.
+    concat_df_copy = concat_df.copy()
+    # Drop 'class_ignore' rows:
+    for c in classes:
+        agg_dict_copy[f"class{c}"] = agg_dict_copy[f"class{c}"].drop(class_ignore[f"class{c}"])
+    # Test2: Check whether first and last month aggregation yield same as first 
+    # and last entries of agg_dict_copy for each class.
+    for c in classes:
+        concat_df_copy_c = concat_df_copy[~concat_df_copy["date"].isin(class_ignore[f"class{c}"])]
+        first_month = concat_df_copy_c.loc[concat_df_copy_c["date"] == concat_df_copy_c["date"].iloc[0]]
+        last_month = concat_df_copy_c.loc[concat_df_copy_c["date"] == concat_df_copy_c["date"].iloc[-1]]
+        for k in col_list:
+            assert np.average(first_month[k], weights=first_month[f"weights_{c}"]) == agg_dict_copy[f"class{c}"].iloc[0][k]
+            assert np.average(last_month[k], weights=last_month[f"weights_{c}"]) == agg_dict_copy[f"class{c}"].iloc[-1][k]
+            assert (weighted_avg(first_month, k, f"weights_{c}") - agg_dict_copy[f"class{c}"].iloc[0][k]) < 0.0001
+            assert (weighted_avg(last_month, k, f"weights_{c}") - agg_dict_copy[f"class{c}"].iloc[-1][k]) < 0.0001
+    print("Test2: Successful! First and last month individual aggregation (of non-to-ignore months) yield the same "
          "as first and last entries of the aggregated dataframe for the respective class.")
 
     # Test3: If "pred" column in aggregated df's corresponds to class in each row (month).
     for c in classes:
-        assert (agg_dict[f"class{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
+        assert (agg_dict_copy[f"class{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
     print("Test3: Successful! Aggregated 'pred' column is equal to the class in each month.")
     # Test4: If short and low portfolios are aggregated correctly.
-    assert ((agg_dict[f"class{classes[0]}"]["if_long_short"] == -1).all() and
-            (agg_dict[f"class{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
+    assert ((agg_dict_copy[f"class{classes[0]}"]["if_long_short"] == -1).all() and
+            (agg_dict_copy[f"class{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
             "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
     print("Test4: Successful! Both the lowest class and the highest class corrrespond "
         "to -1 and 1 in the column 'if_long_short', respectively.")
@@ -169,16 +183,16 @@ def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, class
     for c in classes:
         for k in classes:
             if c == k:
-                assert (agg_dict[f"class{c}"][f"weights_{k}"] == 1).all()
-                assert (agg_dict[f"class{c}"]["pred"] == k).all()
+                assert (agg_dict_copy[f"class{c}"][f"weights_{k}"] == 1).all()
+                assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
                 if c==classes[0]:
-                    assert (agg_dict[f"class{c}"]["if_long_short"] == -1).all()
+                    assert (agg_dict_copy[f"class{c}"]["if_long_short"] == -1).all()
                 elif c==classes[-1]:
-                    assert (agg_dict[f"class{c}"]["if_long_short"] == 1).all()
+                    assert (agg_dict_copy[f"class{c}"]["if_long_short"] == 1).all()
                 else:
-                    assert (agg_dict[f"class{c}"]["pred"] == k).all()
+                    assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
             else:
-                assert (agg_dict[f"class{c}"][f"weights_{k}"] == 0).all()
+                assert (agg_dict_copy[f"class{c}"][f"weights_{k}"] == 0).all()
     print("Test5: Successful! Check whether one-hot encoding columns make sense "
         "with the columns 'preds' and 'if_long_short'.")
 
@@ -192,8 +206,6 @@ def weighted_means_by_column(x, cols, w):
         return pd.Series([np.average(x[c], weights=x[w] ) for c in cols], cols)
     except ZeroDivisionError:
         series = pd.Series(0, cols) # set all values to 0 for those months with no prediction.
-        series[w] = 1 #set weight column to 1 still.
-        series["pred"] = int(w[-1])
         return series
 
 
@@ -211,12 +223,13 @@ def weighted_means_by_column2(x, cols, w):
         return pd.Series([weighted_avg(x, c, weights=w) for c in cols], cols)
     except ZeroDivisionError:
         series = pd.Series(0, cols) # set all values to 0 for those months with no prediction.
-        series[w] = 1 #set weight column to 1 still.
-        series["pred"] = int(w[-1])
         return series
 # ---
 
+
 def export_dfi(perfstats: pd.DataFrame, path: str) -> None:
+    """dfi tries exporting the dataframe with Google Chrome first. On Linux
+    this can fail, so then it tries exporting with table_conversion=matplotlib."""
     try:
         dfi.export(perfstats, path)
         return
@@ -228,3 +241,36 @@ def export_dfi(perfstats: pd.DataFrame, path: str) -> None:
         return
     except OSError as err:
         raise OSError("Try different dataframe .png exporter.") from err
+
+
+def get_class_ignore_dates(concat_df: pd.DataFrame, classes: list) -> dict:
+    """For each class get months where there was no prediction for it at all.
+    
+        Returns:
+            class_ignore (dict): DatetimeIndeces for each class in a dictionary.
+    """
+    class_ignore = {}
+    for c in classes:
+        sum_onehot = concat_df.groupby("date")[f"weights_{c}"].sum()
+        nr_months_noclass = sum_onehot[sum_onehot==0].count()
+        months_noclass = sum_onehot[sum_onehot==0].index #Datetimeindex of months.
+        if c == classes[0]: #short class, save month indeces to exlude.
+            if not nr_months_noclass:
+                print(f"Short Class {c} was predicted in every month.")
+            else:
+                print(f"Short Class {c}, was not predicted in the following {nr_months_noclass} months:", 
+                months_noclass.strftime("%Y-%m-%d").tolist())
+        elif c == classes[-1]: #long class, save month indeces to exclude.
+            if not nr_months_noclass:
+                print(f"Short Class {c} was predicted in every month.")
+            else:
+                print(f"Long Class {c} was not predicted in the following {nr_months_noclass} months:", 
+                months_noclass.strftime("%Y-%m-%d").tolist())
+        else: #remaining classes, just print info.
+            if not nr_months_noclass:
+                print(f"Class {c} was predicted in every month.")
+            else:
+                print(f"Class {c}, was not predicted in the following {nr_months_noclass} months:", 
+                months_noclass.strftime("%Y-%m-%d").tolist())
+        class_ignore[f"class{c}"] = months_noclass
+    return class_ignore
