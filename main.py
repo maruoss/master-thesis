@@ -12,7 +12,7 @@ from trainers.trainer_xgb import xgb_tune
 from utils.helper import save_time, summary_to_csv
 from trainers.trainer_sk import sk_run
 from arguments import load_args
-from trainers.trainer_nn import nn_train, nn_tune
+from trainers.trainer_nn import nn_tune
 
 
 def run(args, year_idx, time, ckpt_path, config):
@@ -34,7 +34,7 @@ def run(args, year_idx, time, ckpt_path, config):
             )
     """
     fun_dict = {
-                "nn_train": nn_train, 
+                # "nn_train": nn_train, 
                 "nn_tune": nn_tune, 
                 "lin_tune": sk_run,
                 "svm_tune": sk_run,
@@ -85,11 +85,11 @@ def add_stress_test_param(args):
     d["init_train_length"] = 26 - args.val_length - args.test_length
     # d["dataset"] = "big" #specify yourself.
     # Depending on which epoch key is avail., change it.
-    it_keys = ["max_epochs", "max_iters", "n_estimators"]
+    it_keys = ["max_epochs", "max_iters", "n_estimators", "check_val_every"]
     for i in it_keys:
         if i in d.keys():
-            d[i] = 10 # change to 10 epochs
-    d["num_samples"] = 2  #to test parallelism.
+            d[i] = 1 # change to 10 epochs
+    d["num_samples"] = 16  #to test parallelism.
 
 
 if __name__ == "__main__":
@@ -100,12 +100,12 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers()
 
     # Define subparser level arguments.
-    parser_train = subparsers.add_parser("train")
-    parser_train.set_defaults(mode="train") # string can also be a function
+    # parser_train = subparsers.add_parser("train")
+    # parser_train.set_defaults(mode="train") # string can also be a function
     parser_tune = subparsers.add_parser("tune") 
     parser_tune.set_defaults(mode="tune") # string can also be a function
 
-    parser_train.add_argument("model", choices=["nn"])
+    # parser_train.add_argument("model", choices=["nn"])
     parser_tune.add_argument("model", choices=["nn", "lin", "svm", "rf", "xgb"])
 
     # Parse mode and model first to determine which args to load in load_args.
@@ -133,12 +133,13 @@ if __name__ == "__main__":
     # cockpit.add_argument("--max_epochs", type=int, default=100) #max_iters for lin, svm, xgb
     cockpit.add_argument("--no_predict", action="store_true") #default: predict
     cockpit.add_argument("--refit", action="store_true") #default: no refit
-    cockpit.add_argument("--stress_test", action="store_true")
+    cockpit.add_argument("--stresstest", action="store_true")
     # Tune configuration
     cockpit = parser.add_argument_group("Tune Configuration")
     cockpit.add_argument("--num_samples", type=int, default=20, help="How many "
                         "parameter configurations are sampled.")
-    cockpit.add_argument("--gpus_per_trial", type=int, default=1)
+    cockpit.add_argument("--gpus_per_trial", type=float, default=0.25) #for 2 gpus, gives 8 parallel trials.
+    cockpit.add_argument("--njobs", type=int, default=8) #for 16 cpus, 8 parralel jobs use 2 cpus/trial.
     # ASHA
     cockpit.add_argument("--grace_pct", type=float, default=0.2, 
                         help="Percentage of epochs that have to be run before "
@@ -151,7 +152,7 @@ if __name__ == "__main__":
             ("(train + val + test) is bigger than total years in dataset (26).")
 
     # Stress test with biggest dataset? CAREFUL: needs a lot of memory!
-    if args.stress_test:
+    if args.stresstest:
         add_stress_test_param(args)
 
     seed_everything(args.seed, workers=True)

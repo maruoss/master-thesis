@@ -12,6 +12,37 @@ from sklearn.compose import make_column_transformer
 from sic_codes import add_sic_manually
 
 
+def calc_opt_ret(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate option returns for option id's that have at least 2
+    entries (months) of data."""
+    # Count number of options per option id.
+    optid_counts = df.groupby("optionid")["secid"].agg("count")
+    # Only optionids with count > 1 can potentially have a return.
+    atleasttwo = optid_counts[optid_counts > 1].index.tolist()
+    df_final = call_opt_ret(df, atleasttwo)
+    return df_final
+
+
+def call_opt_ret(df: pd.DataFrame, opt_ids: list) -> pd.DataFrame:
+    """Calculate option returns based on Cao (2021), Option Return Predictability
+    page 9. 
+    For each option id, check if months are successive and only then calculate
+    return, otherwise it is NaN."""
+    for opt_id in tqdm(opt_ids):
+        df_opt = df[df["optionid"] == opt_id]
+        for i, idx in enumerate(df_opt.index):
+            if i + 1 == len(df_opt.index):
+                df.loc[idx, "option_ret"] = None
+                break
+            if df_opt.iloc[i]["date"] + MonthEnd(1) == df_opt.iloc[i+1]["date"]:
+                t1 = (df_opt.iloc[i]["delta"] * df_opt.iloc[i+1]["spotprice"]) - df_opt.iloc[i+1]["mid_price"]
+                t = (df_opt.iloc[i]["delta"]  * df_opt.iloc[i]["spotprice"]) - df_opt.iloc[i]["mid_price"]
+                df.loc[idx, "option_ret"] = t1/t - 1
+            else:
+                df.loc[idx, "option_ret"] = None
+    return df
+
+
 def prepare_dataset(args):
     # Convert string path to pathlib path.
     path = Path(args.path)
@@ -39,9 +70,33 @@ def prepare_dataset(args):
     sp500opt_df["exdate"] = pd.to_datetime(sp500opt_df["exdate"])
     # Bring dates to end of month dates (in order to correctly merge with other datasets).
     sp500opt_df["date"] = sp500opt_df["date"] + MonthEnd(0)
-    # Remove 138 NaN option returns.
-    sp500opt_df = sp500opt_df.drop(sp500opt_df[sp500opt_df["option_ret"].isnull()].index)
-    sp500opt_df = sp500opt_df.reset_index(drop=True)
+    # Remove 138 NaN option returns. # ->Commented out for Cao Returns.
+    # sp500opt_df = sp500opt_df.drop(sp500opt_df[sp500opt_df["option_ret"].isnull()].index)
+    # sp500opt_df = sp500opt_df.reset_index(drop=True)
+    # Drop old 'option_ret' column.
+    sp500opt_df = sp500opt_df.drop(columns=["option_ret"])
+
+    # Take subset of option types if specificed.
+    print(f"Subset option dataframe for the {args.optiontype} option type and "
+            "calculate returns via the formula in Cao (2021). Takes about 30mins...")
+    if args.optiontype == "call":
+        sp500opt_df_call = sp500opt_df[sp500opt_df["cp_flag"] == "C"].copy()
+        sp500opt_df_newret = calc_opt_ret(sp500opt_df_call)
+    elif args.optiontype == "put":
+        sp500opt_df_put = sp500opt_df[sp500opt_df["cp_flag"] == "P"].copy()
+        # sp500opt_df_newret = calc_opt_ret(sp500opt_df_put)
+        raise NotImplementedError ("Put return calculation still left to do.")
+    else:
+        sp500opt_df_copy = sp500opt_df.copy()
+        # sp500opt_df_newret = calc_opt_ret(sp500opt_df_copy)
+        raise NotImplementedError ("Return calculation for 'all' optiontype still left to do.")
+    print("Done!")
+
+    # print("Save full dataset and then drop NaN returns...")
+    # sp500opt_df_newret.to_parquet(path/"call_full.parquet")
+    #Drop NaN option returns.
+    sp500opt_df_newret = sp500opt_df_newret.dropna(axis=0)
+    print("Done!")
 
     # Load mapping table data (options <-> underlying stocks). Note: The last
     # 7 lines (line 28278-28284) in the .csv. were added manually to fix minor
@@ -54,7 +109,7 @@ def prepare_dataset(args):
 
     # Merge Option Returns and mapping table on "secid".
     print("Merge S&P 500 option returns with underlying stock 'secid'...")
-    opt_df = sp500opt_df.merge(map_table_df, on="secid")
+    opt_df = sp500opt_df_newret.merge(map_table_df, on="secid")
     print("Done!")
 
     # Correct format important here, otherwise will see month as day and vice versa.
@@ -67,7 +122,7 @@ def prepare_dataset(args):
     opt_df = opt_df[(opt_df["date"] >= opt_df["sdate"]) & 
                     ((opt_df["date"] <= opt_df["edate"]) | 
                     (opt_df["edate"] >= "2020-12-31"))]
-    print(f"Done! The merged df after filtering has {len(sp500opt_df)-len(opt_df)} "
+    print(f"Done! The merged df after filtering has {len(sp500opt_df_newret)-len(opt_df)} "
         "rows less than the original S&P 500 option return dataset.")
     # 4 observations are dropped because their date is after the 'edate' of the 
     # mapping list...
@@ -127,7 +182,7 @@ def prepare_dataset(args):
     final_df = opt_df.merge(gu2020_df, on=["date", "permno"], how="inner")
     print(f"Done! {len(opt_df)-len(final_df)} rows have been removed by the "
           "inner join of the option and stock data on 'date' and 'permno'.")
-    # Put option returns at the end.
+    # Move option returns to the end.
     opt_ret = final_df.pop("option_ret")
     final_df["option_ret"] = opt_ret
 
@@ -161,35 +216,37 @@ def prepare_dataset(args):
 def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     # Create and save small, medium and big datasets.
     # Small dataset takes the option_return data + the newly created one_hot columns 
-    # + option return, gives in total 22 columns (incl. target, option_return)
-    prefix = f"final_df{args.tag}"
-    if args.size == "small": # 22 columns.
-        filename = prefix + "_small.parquet"
-        # Only keep first 19 columns + 'cp_flag_C', 'cp_flag_P' and the target 'option_ret'
-        small_df_columns = (final_df.iloc[:, :19].columns
-                        .append(final_df.loc[:, ["cp_flag_C", "cp_flag_P", "option_ret"]].columns))
-        small_final_df = final_df.loc[:, small_df_columns]
-        small_final_df.to_parquet(path/filename) # 22 columns.
+    # + option return, gives in total 20 columns (incl. target, option_return)
+    prefix = f"final_df_{args.optiontype}_cao{args.tag}"
+    # if args.size == "small": # 22 columns.
+    filename = prefix + "_small.parquet"
+    # Only keep first 19 columns + the target 'option_ret'
+    small_df_columns = (final_df.iloc[:, :19].columns
+                    .append(final_df.loc[:, ["option_ret"]].columns))
+    small_final_df = final_df.loc[:, small_df_columns]
+    small_final_df.to_parquet(path/filename) # 20 columns. (old 22, cp_flags not necessary anymore)
     
-    elif args.size == "medium": # 116 columns.
-        # Medium dataset takes all option + stock data but no sic onehot columns.
-        if args.fill_na:  # NaNs filled.
-            filename = prefix + f"_med_fill{args.fill_fn}.parquet"
-        else: # NaNs not filled.
-            filename = prefix + "_med_nofill.parquet"
-        # Remove all sic codes from big dataset to get medium.
-        medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')]
-        medium_final_df.to_parquet(path/filename) # 116 columns.
+    # elif args.size == "medium": # 114 columns. (old: 116, cp flags removed)
+    # Medium dataset takes all option + stock data but no sic onehot columns.
+    if args.fill_na:  # NaNs filled.
+        filename = prefix + f"_med_fill{args.fill_fn}.parquet"
+    else: # NaNs not filled.
+        filename = prefix + "_med_nofill.parquet"
+    # Remove all sic codes from big dataset to get medium.
+    medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')]
+    medium_final_df = medium_final_df.drop(columns=["cp_flag_C"])
+    medium_final_df.to_parquet(path/filename) # 114 columns.
 
-    elif args.size == "big": # 179 columns.
-        # Big dataset leaves data as it is.
-        if args.fill_na: # NaNs filled.
-            filename= prefix + f"_big_fill{args.fill_fn}.parquet"
-        else: # NaNs not filled
-            filename = prefix + "_big_nofill.parquet"
-        final_df.to_parquet(path/filename) # 179 columns.
+    # elif args.size == "big": # 176 columns. (old: 179, {'cp flags, 'sic2_41.0'} are removed for call_cao.
+    # Big dataset leaves data as it is.
+    if args.fill_na: # NaNs filled.
+        filename= prefix + f"_big_fill{args.fill_fn}.parquet"
+    else: # NaNs not filled
+        filename = prefix + "_big_nofill.parquet"
+    final_df = final_df.drop(columns=["cp_flag_C"]) # Drop cp_flag_C.
+    final_df.to_parquet(path/filename) # 176 columns.
 
-    print(f"The final dataframe with specifications:\nsize: {args.size},\nfill_na: {args.fill_na}, "
+    print(f"The final dataframes small, medium and big with specifications:\nfill_na: {args.fill_na}, "
           f"\nfill_fn: {args.fill_fn}\nhas been saved to {path/filename} .")
 
 
@@ -203,11 +260,13 @@ if __name__ == "__main__":
     # 'datashare.parquet' should reside.
     path = Path.cwd()/"data"
 
-    parser.add_argument("size", type=str, choices=["small", "medium", "big"], 
-                        help="Size of the desired final dataset.")
-    parser.add_argument("--path", type=str, 
-                    default=path,
-                    help="Path where all the three required data files should lie.")
+    parser.add_argument("optiontype", type=str, choices=["all", "call", "put"],
+                        help="Whether to only select call or put or all option types.")
+    # parser.add_argument("--size", type=str, choices=["small", "medium", "big"], 
+    #                     default="small", help="Size of the desired final dataset.")
+    parser.add_argument("--path", type=str,
+                        default=path,
+                        help="Path where all the three required data files should lie.")
     parser.add_argument("--fill_fn", type=str, default="mean", choices=["mean", "median"],
                         help="whether mean or median should be used for filling NaN values")
     parser.add_argument("--fill_na", action="store_true", help="fill na values "

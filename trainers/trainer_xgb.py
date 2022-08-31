@@ -9,28 +9,23 @@ from sklearn.metrics import balanced_accuracy_score
 import xgboost as xgb
 from ray.tune.schedulers import ASHAScheduler
 from ray.tune import CLIReporter
-
 from ray import tune
 from ray.tune.integration.xgboost import TuneReportCheckpointCallback
-
 import pytorch_lightning as pl #for "seed everything"
 from typing import Tuple, Dict, List
+import shutil
 
-from datamodule_loop import Dataset
+from datamodule import Dataset
 from utils.logger import serialize_config
 from utils.helper import set_tune_log_dir
 
 
 
 def bal_acc_xgb(preds: np.ndarray, dtrain: xgb.DMatrix) -> Tuple[str, float]:
-
     y = dtrain.get_label() # returns np.array
-    
     # if binary problem, preds will be probabilites... . Doesnt affect multi problem.
     preds = np.round(preds)
-
     val_bal_acc = balanced_accuracy_score(y, preds)
-    
     return 'val_bal_acc', val_bal_acc
 
 
@@ -128,8 +123,8 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         'disable_default_eval_metric': 1,
         "max_depth": tune.randint(1, 9),
         "min_child_weight": tune.choice([1, 2, 3]),
-        "subsample": tune.uniform(0.5, 1.0),
-        "eta": tune.loguniform(1e-4, 1e-1),
+        "subsample": tune.quniform(0.2, 1.0, 0.05),
+        "eta": tune.qloguniform(1e-6, 1e-1, 5e-7),
     }
 
     # In xgb, we have to specify num_classes in advance.
@@ -235,6 +230,9 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         # Load best model.
         best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1],
                         "checkpoint")
+        # Copy best model to loop folder for later analysis.
+        test_year_end = val_year_end + args.test_length
+        shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
         print(f"Loading model from path at {best_path}")
         best_bst = xgb.Booster()
         best_bst.load_model(best_path)
@@ -249,7 +247,6 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
             preds = np.round(preds) # if 2 classes, round the probabilities
         # preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
         preds_argmax_df = pd.DataFrame(preds, columns=["pred"])
-        test_year_end = val_year_end + args.test_length
         # Prediction path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_argmax_df.to_csv(save_to_dir, index_label="id")

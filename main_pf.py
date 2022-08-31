@@ -130,7 +130,7 @@ def aggregate(args):
             df.to_csv(pf_dir/f"{class_c}.csv")
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
         raise FileExistsError("Directory 'portfolios' already exists. Will not "
-        "touch folder and exit.") from err
+        "touch folder and exit code.") from err
     print("Done!")
 
     print("Create Long Short Portfolio while ignoring months where one side "

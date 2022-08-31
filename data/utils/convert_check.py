@@ -1,7 +1,6 @@
 # Manually insert SIC codes
 from argparse import ArgumentParser
 from pathlib import Path
-import pdb
 import time
 
 import pandas as pd
@@ -70,8 +69,9 @@ def small_med_big_eq(path: Path):
     for all three datasets...
     
     Args:
-        path (Path):    requires 'final_df_small.parquet', 'final_df_med_fillmean.parquet' 
-                        and 'final_df_big_fillmean.parquet' files in it.
+        path (Path):    requires 'final_df_call_cao_small.parquet', 'final_df_call_
+                        cao_med_fillmean.parquet' and 'final_df_call_cao_big_fillmean.parquet' 
+                        files in it.
     Returns:
         bool:           True, when dates and returns of all files are equal.
                         False, when dates and returns of files are NOT equal.
@@ -79,15 +79,15 @@ def small_med_big_eq(path: Path):
     # Read in 'small', 'med' and 'big' datasets"
     print("Read in csv's...")
     s_time = time.time()
-    df_small = pd.read_parquet(path/"final_df_small.parquet")
+    df_small = pd.read_parquet(path/"final_df_call_cao_small.parquet")
     df_small = df_small.loc[:, ["date", "option_ret"]]
-    df_med = pd.read_parquet(path/"final_df_med_fillmean.parquet")
+    df_med = pd.read_parquet(path/"final_df_call_cao_med_fillmean.parquet")
     df_med = df_med.loc[:, ["date", "option_ret"]]
-    df_big = pd.read_parquet(path/"final_df_big_fillmean.parquet")
+    df_big = pd.read_parquet(path/"final_df_call_cao_big_fillmean.parquet")
     df_big = df_big.loc[:, ["date", "option_ret"]]
     e_time = time.time()
     print("Read 'small', 'medium' and 'big' datasets "
-            "in: ", (e_time-s_time), "seconds.")
+            "in", (e_time-s_time), "seconds.")
     
     # Compare them, make sure they are all equal. (order should be preserved from
     # original dataset)
@@ -104,7 +104,7 @@ if __name__ == "__main__":
 
     path = Path.cwd()/"data"
     # only nargs='?' allows to omit positional keyword argument
-    parser.add_argument("function", choices=["csv_to_parquet", "csv_eq_parquet"])
+    parser.add_argument("function", choices=["csv_to_parquet", "csv_eq_parquet", "check"])
     parser.add_argument("-f", "--filename", type=str) #saved as args.filename
     parser.add_argument("--path", type=str, default=path)
 
@@ -114,3 +114,6 @@ if __name__ == "__main__":
         csv_to_parquet(args)
     elif args.function == "csv_eq_parquet":
         csv_eq_parquet(args)
+    elif args.function == "check":
+        assert small_med_big_eq(path), "Dates and option returns of small, medium and big datasets are NOT equal!"
+        print("Success! Dates and option returns of small, medium and big datasets are equal!")

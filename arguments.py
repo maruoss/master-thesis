@@ -1,4 +1,4 @@
-from datamodule_loop import Dataset, MyDataModule_Loop
+from datamodule import Dataset, DataModule
 from model.neuralnetwork import FFN
 
 import pdb
@@ -26,7 +26,7 @@ def args_nn(parser):
 
     # dm
     # already implemented in model method: group = parser.add_argument_group("Data Module Configuration")
-    group = MyDataModule_Loop.add_model_specific_args(parser)  #add additional arguments directly in class method
+    group = DataModule.add_model_specific_args(parser)  #add additional arguments directly in class method
 
     # model
     # already implemented in model method: group = parser.add_argument_group("Model Configuration")
@@ -50,7 +50,7 @@ def args_lin(parser):
 
     group = parser.add_argument_group("Sklearn Tune Configuration")
     group.add_argument("--max_iters", type=int, default=300)
-    group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
+    # group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
 
 
 def args_svm(parser):
@@ -64,7 +64,7 @@ def args_svm(parser):
 
     group = parser.add_argument_group("Sklearn Tune Configuration")
     group.add_argument("--max_iters", type=int, default=300)
-    group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
+    # group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
 
 
 def args_rf(parser):
@@ -78,7 +78,7 @@ def args_rf(parser):
 
     group = parser.add_argument_group("Sklearn Tune Configuration")
     group.add_argument("--n_estimators", type=int, default=100)
-    group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
+    # group.add_argument("--njobs", type=int, default=2) #how many trials in parallel
 
 
 def args_xgb(parser):

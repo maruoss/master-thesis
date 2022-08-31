@@ -11,12 +11,13 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tensorboard import summary
 from tune_sklearn import TuneGridSearchCV
-from datamodule_loop import Dataset
+from datamodule import Dataset
 from sklearn.utils.class_weight import compute_class_weight
 from utils.helper import get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
 from sklearn.kernel_approximation import Nystroem
 from ray.tune.schedulers import ASHAScheduler
+from joblib import dump, load
 
 from utils.logger import serialize_args, serialize_config
 
@@ -85,10 +86,19 @@ def sk_run(args, year_idx, time, ckpt_path, config):
         json.dump(serialize_config(best_config), fp=f, indent=3)
 
     if not args.no_predict:
+        # Save tunesearch object for later prediction anaylsis.
+        test_year_end = val_year_end + args.test_length
+        # Save best estimator for later anaylasis. Cant save the whole tune_search object...
+        dump(tune_search.best_estimator_, loop_path/f"ts{test_year_end}.joblib")
         # Automatically predicts with best (refitted) estimator of GridSearchCV
         preds = tune_search.predict(data.X_test)
+        # Check if correct model is saved:
+        test_preds = load(loop_path/f"ts{test_year_end}.joblib").predict(data.X_test)
+        if (preds == test_preds).all():
+            print(f"Predictions {test_year_end} from saved and current model are the same.")
+        else:
+            raise ValueError(f"Predictions {test_year_end} from saved and current model are not the same.")
         preds_df = pd.DataFrame(preds, columns=["pred"])
-        test_year_end = val_year_end + args.test_length
         # Prediction directory path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_df.to_csv(save_to_dir, index_label="id")
@@ -143,7 +153,7 @@ def load_lin(args, data):
     parameter_grid = {
         # Dont change loss.
         "clf__loss": [args.loss], #logloss (Log Reg.) or hinge (linear SVM)
-        # "clf__penalty": ["l2", "l1", "elasticnet"]
+        "clf__penalty": ["l2", "l1", "elasticnet"],
         "clf__alpha": np.logspace(-6, 5, 12),
     }
     if args.pca and args.dataset=="small":

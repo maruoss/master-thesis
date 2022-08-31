@@ -12,13 +12,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from tensorboard import summary
 from tune_sklearn import TuneGridSearchCV, TuneSearchCV
-from datamodule_loop import Dataset
+from datamodule import Dataset
 from sklearn.utils.class_weight import compute_class_weight
 from utils.helper import get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
 from sklearn.kernel_approximation import Nystroem
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
+from joblib import dump, load
 
 from utils.logger import serialize_args, serialize_config
 
@@ -88,10 +89,18 @@ def rf_run(args, year_idx, time, ckpt_path, config):
         json.dump(serialize_config(best_config), fp=f, indent=3)
 
     if not args.no_predict:
+        # Save tunesearch object for later prediction anaylsis.
+        test_year_end = val_year_end + args.test_length
+        dump(tune_search.best_estimator_, loop_path/f"ts{test_year_end}.joblib")
         # Automatically predicts with best (refitted) estimator of GridSearchCV
         preds = tune_search.predict(data.X_test)
+        # Check if correct model is saved:
+        test_preds = load(loop_path/f"ts{test_year_end}.joblib").predict(data.X_test)
+        if (preds == test_preds).all():
+            print(f"Predictions {test_year_end} from saved and current model are the same.")
+        else:
+            raise ValueError(f"Predictions {test_year_end} from saved and current model are not the same.")
         preds_df = pd.DataFrame(preds, columns=["pred"])
-        test_year_end = val_year_end + args.test_length
         # Prediction directory path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_df.to_csv(save_to_dir, index_label="id")
@@ -133,7 +142,7 @@ def load_rf(args, data):
         "clf__max_depth": tune.randint(1, 6),
         "clf__min_samples_split": tune.choice([2, 3, 4, 5]),
         "clf__min_samples_leaf": tune.choice([1, 2, 3, 4, 5]),
-        "clf__max_features": tune.uniform(0.1, 0.3), #sqrt(features) is a good start
+        "clf__max_features": tune.quniform(0.05, 0.4, 0.05), #sqrt(features) is a good start
         "clf__max_leaf_nodes": tune.choice([2, 3, 4, 5]),
     }
     if args.pca and args.dataset=="small":

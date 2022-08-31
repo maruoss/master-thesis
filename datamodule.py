@@ -10,8 +10,8 @@ from pathlib import Path
 import pdb
 from sklearn.utils.class_weight import compute_class_weight
 
-class MyDataModule_Loop(pl.LightningDataModule):
-    """DataModule for Pytorch Lightning (Neural Network)."""
+class DataModule(pl.LightningDataModule):
+    """Dataset Loader for Pytorch Lightning (Neural Network)."""
     def __init__(self,
                  path: str, # will be converted to Path in __init__
                  year_idx: int,
@@ -338,10 +338,10 @@ class Dataset():
 def load_data(path: Path, dataset: str):
     """Loads dataset from path, depending on specified size."""
     if dataset == "small":
-        return pd.read_parquet(path/"final_df_small.parquet")
+        return pd.read_parquet(path/"final_df_call_cao_small.parquet")
     elif dataset == "medium":
-        return pd.read_parquet(path/"final_df_med_fillmean.parquet")
+        return pd.read_parquet(path/"final_df_call_cao_med_fillmean.parquet")
     elif dataset == "big":
-        return pd.read_parquet(path/"final_df_big_fillmean.parquet")
+        return pd.read_parquet(path/"final_df_call_cao_big_fillmean.parquet")
     else:
         raise ValueError("Specify dataset as either 'small' or 'big'")
