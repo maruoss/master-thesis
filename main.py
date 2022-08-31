@@ -136,7 +136,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--stresstest", action="store_true")
     # Tune configuration
     cockpit = parser.add_argument_group("Tune Configuration")
-    cockpit.add_argument("--num_samples", type=int, default=20, help="How many "
+    cockpit.add_argument("--num_samples", type=int, default=50, help="How many "
                         "parameter configurations are sampled.")
     cockpit.add_argument("--gpus_per_trial", type=float, default=0.25) #for 2 gpus, gives 8 parallel trials.
     cockpit.add_argument("--njobs", type=int, default=8) #for 16 cpus, 8 parralel jobs use 2 cpus/trial.
