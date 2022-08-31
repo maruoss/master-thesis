@@ -46,7 +46,7 @@ def aggregate(args):
     # print("Dates and option return columns from small, medium and big datasets are "
     #         "equal!")
     # Get small dataset (irrespective of small/medium/big used for train!).
-    df_small = pd.read_parquet(datapath/"final_df_small.parquet")
+    df_small = pd.read_parquet(datapath/"final_df_call_cao_small.parquet")
     dates = df_small["date"]
     # Get args from experiment.
     # Alternatively: Load json with json.load() and convert dict/list to df.

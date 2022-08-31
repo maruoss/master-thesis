@@ -185,8 +185,8 @@ class YearMonthEndIndeces:
         self.eoy_idx =  np.where((dates.dt.year.diff() == 1))[0]
         self.eoy_idx = np.append(self.eoy_idx, len(dates))
 
-        # Careful: -1 because December 2021 is not in dataset.
-        assert (26 * 12 - 1 == len(self.eom_idx)), ("Some end of month indeces are missing.")
+        # Careful: -2 because November (-> cao (2021) return calc.) and December 2021 is not in dataset.
+        assert (26 * 12 - 2 == len(self.eom_idx)), ("Some end of month indeces are missing.")
         assert init_train_length > 0, "init_train_length must be strictly greater than 0."
 
         # The 4th idx in eoy_idx is the end of year 5. -> Subtract 1.

@@ -21,7 +21,7 @@ def collect_preds(exp_dir: Path):
                     print(f"Copy file: '{file.relative_to(Path.cwd())}'"
                         f"to '{preds_dir.relative_to(Path.cwd())}'")
                     try:
-                        shutil.copy(file, preds_dir)
+                        shutil.copy2(file, preds_dir)
                     except shutil.SameFileError:
                         print("Source and Destination are the same file...")
                 else:
