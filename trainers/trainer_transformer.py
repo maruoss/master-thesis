@@ -12,8 +12,8 @@ import torch
 
 from datamodule import DataModule
 from model.transformer import TransformerEncoder
-from utils.helper import set_tune_log_dir
-from utils.logger import create_foldername, serialize_args, serialize_config, params_to_dict
+from utils.helper import del_transformer_ckpts, set_tune_log_dir
+from utils.logger import serialize_config
 from model.neuralnetwork import FFN
 
 from ray.tune.integration.pytorch_lightning import TuneReportCallback, TuneReportCheckpointCallback
@@ -117,8 +117,8 @@ def transformer_tune(args, year_idx, time, ckpt_path, start_config: dict):
         # "lr": 1e-2, #round to 5e-5 steps
         # "batch_size": 128,
         # ***
-        "d": tune.choice([128]), # The embedding dimension.
-        "depth": tune.choice([1, 2, 3]), #The number of transformer blocks. Default: 6.
+        "d": tune.choice([64, 128]), # The embedding dimension.
+        "depth": tune.choice([1]), #The number of transformer blocks. Default: 6. -> 1 otherwise training times to large.
         "heads": tune.choice([1, 2, 3]), #The number of attention heads for each transformer block. Default 8.
         "n_mlp": tune.choice([1, 2, 3, 4]) #since d=1, d*n_mlp = n_mlp = hidden dim.
         # "hidden_dim": tune.choice([25, 50, 100]),
@@ -226,11 +226,16 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         # load best model
         best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1],
                         "checkpoint")
-        # Copy best model to loop folder for later analysis.
+        # Copy best model checkpoint to loop folder for later analysis.
         test_year_end = val_year_end + args.test_length
         shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
-        print(f"Loading model to predict from path: {best_path}")
-        model = TransformerEncoder.load_from_checkpoint(best_path)
+        # ONLY FOR TRANSFORMERS: delete all other checkpoints (take huge disk space).
+        new_best_path = loop_path/f"best_ckpt{test_year_end}"
+        print("Delete checkpoints in trials to save disk space...")
+        del_transformer_ckpts(loop_path)
+        print("Done!")
+        print(f"Loading model to predict from path: {new_best_path}")
+        model = TransformerEncoder.load_from_checkpoint(new_best_path)
         dm = DataModule(
             path=args.path_data,
             year_idx=year_idx,

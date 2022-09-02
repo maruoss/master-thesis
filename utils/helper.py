@@ -88,3 +88,13 @@ def save_time(start_time: datetime):
     time_dict["S"] = round(sec, 2) # round secs to 2 decimals
     return time_dict, end_time
 
+
+def del_transformer_ckpts(loop_dir: Path):
+    """Delete transformer model checkpoints after saving best, to not overload drive storage."""
+    for file in loop_dir.iterdir():
+        if file.is_dir():
+#             print(file)
+            del_transformer_ckpts(file) #recursion
+        else:
+            if file.name == "checkpoint":
+                file.unlink()

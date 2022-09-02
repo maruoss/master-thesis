@@ -12,7 +12,7 @@ import torch
 
 from datamodule import DataModule
 from utils.helper import set_tune_log_dir
-from utils.logger import create_foldername, serialize_args, serialize_config, params_to_dict
+from utils.logger import serialize_config
 from model.neuralnetwork import FFN
 
 from ray.tune.integration.pytorch_lightning import TuneReportCallback, TuneReportCheckpointCallback
@@ -218,7 +218,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         # load best model
         best_path = Path(analysis.get_best_checkpoint(best_trial).get_internal_representation()[1],
                         "checkpoint")
-        # Copy best model to loop folder for later analysis.
+        # Copy best model checkpoint to loop folder for later analysis.
         test_year_end = val_year_end + args.test_length
         shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
         print(f"Loading model to predict from path: {best_path}")
