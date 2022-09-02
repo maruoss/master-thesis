@@ -6,7 +6,7 @@ import dataframe_image as dfi
 from tqdm import tqdm
 
 def collect_preds(exp_dir: Path):
-    """Moves all predictions????.csv to a 'predictions' folder within the
+    """Copies all predictions????.csv to a 'predictions' folder within the
     experiment_directory."""
     preds_dir = exp_dir/"predictions"
     preds_dir.mkdir(exist_ok=True, parents=True)

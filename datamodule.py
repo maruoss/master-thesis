@@ -164,7 +164,7 @@ class DataModule(pl.LightningDataModule):
 
     def predict_dataloader(self):
         dataset = self.X_test # predict_step expects tensor not a list
-        return DataLoader(dataset, batch_size=len(self.X_test), #NOTE loads the whole testset
+        return DataLoader(dataset, batch_size=self.hparams.batch_size,
                         num_workers=0,
                         pin_memory=True,
                         shuffle=False, #must not shuffle here!

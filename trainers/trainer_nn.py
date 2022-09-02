@@ -8,6 +8,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import shutil
+import torch
 
 from datamodule import DataModule
 from utils.helper import set_tune_log_dir
@@ -226,7 +227,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
             path=args.path_data,
             year_idx=year_idx,
             dataset=args.dataset,
-            batch_size=1, #any number, doesnt matter for predict
+            batch_size=best_config["batch_size"], #take batchsize of best config.
             init_train_length=args.init_train_length,
             val_length=args.val_length,
             test_length=args.test_length,
@@ -239,8 +240,9 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
             logger=False, #deactivate logging for prediction
         )
         # predict
-        preds = trainer.predict(model=model, datamodule=dm)
-        preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
+        preds = trainer.predict(model=model, datamodule=dm) #returns list of batch predictions.
+        preds = torch.cat(preds) #preds is a list already of [batch_size, num_classes]. 
+        preds_argmax = preds.argmax(dim=1).numpy()
         preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
         # prediction path
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
