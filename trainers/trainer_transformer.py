@@ -10,6 +10,7 @@ from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 import shutil
 
 from datamodule import DataModule
+from model.transformer import TransformerEncoder
 from utils.helper import set_tune_log_dir
 from utils.logger import create_foldername, serialize_args, serialize_config, params_to_dict
 from model.neuralnetwork import FFN
@@ -21,7 +22,7 @@ from ray.tune import CLIReporter
 from torch import nn
 
 
-def inner_nn_tune(config, args, year_idx, ckpt_path):
+def inner_transformer_tune(config, args, year_idx, ckpt_path):
     # Needed for reproducibility, will seed trainer (init of weights in NN, ...).
     pl.seed_everything(args.seed, workers=True)
 
@@ -37,17 +38,21 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
     )
     dm.setup()
 
-    model = FFN(
-        input_dim=dm.input_dim,
+    model = TransformerEncoder(
+        input_dim=dm.input_dim, # "input sequence": l
         num_classes=dm.num_classes,
         class_weights=dm.class_weights,
         no_class_weights=False,
-        hidden_dim=config["hidden_dim"],
+        d=config["d"], #embedding dimension: d
+        depth = config["depth"], #number of transformer blocks
+        heads = config["heads"], #number of attention heads for each transformer block
+        n_mlp = config["n_mlp"], #n_mlp * d = hidden dim of independent FFNs in trans. block.
+        # hidden_dim=config["hidden_dim"],
         learning_rate=config["lr"],
-        n_hidden=config["n_hidden"],
-        batch_norm=config["batch_norm"],
-        dropout=config["dropout"],
-        drop_prob=config["drop_prob"],
+        # n_hidden=config["n_hidden"],
+        # batch_norm=config["batch_norm"],
+        # dropout=config["dropout"],
+        # drop_prob=config["drop_prob"],
     )
 
     # If --refit is active, ckpt_path will be best model of last loop.
@@ -104,19 +109,22 @@ def inner_nn_tune(config, args, year_idx, ckpt_path):
     
 
 
-def nn_tune(args, year_idx, time, ckpt_path, start_config: dict):
-
+def transformer_tune(args, year_idx, time, ckpt_path, start_config: dict):
     config = {
         "lr": tune.qloguniform(1e-6, 1e-1, 5e-7), #round to 5e-7 steps
         "batch_size": tune.choice([128, 256, 512]),
-        # "lr": 1e-6, #round to 5e-5 steps
+        # "lr": 1e-2, #round to 5e-5 steps
         # "batch_size": 128,
         # ***
-        "hidden_dim": tune.choice([25, 50, 100]),
-        "n_hidden" : tune.choice([1, 2, 3]),
-        "batch_norm" : tune.choice([True, False]),
-        "dropout" : tune.choice([True, False]),
-        "drop_prob" : tune.quniform(0, 0.5, 0.05), #round to 0.1 steps
+        "d": tune.choice([128]), # The embedding dimension.
+        "depth": tune.choice([1, 2, 3]), #The number of transformer blocks. Default: 6.
+        "heads": tune.choice([1, 2, 3]), #The number of attention heads for each transformer block. Default 8.
+        "n_mlp": tune.choice([1, 2, 3, 4]) #since d=1, d*n_mlp = n_mlp = hidden dim.
+        # "hidden_dim": tune.choice([25, 50, 100]),
+        # "n_hidden" : tune.choice([1, 2, 3]),
+        # "batch_norm" : tune.choice([True, False]),
+        # "dropout" : tune.choice([True, False]),
+        # "drop_prob" : tune.quniform(0, 0.5, 0.05), #round to 0.1 steps
 #         "hidden_dim": tune.choice([32]),
 #         "lr": tune.choice([1e-2]),
 #         "batch_size": tune.choice([512]),
@@ -146,13 +154,13 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         reduction_factor=args.reduction_factor
     )
     reporter = CLIReporter(
-        parameter_columns=["hidden_dim", "lr", "batch_size"],
+        parameter_columns=["lr", "batch_size", "heads", "depth", "n_mlp"],
         metric_columns=["train_loss", "val_loss", "val_bal_acc", "mean_pred", 
                         "training_iteration"],
         max_report_frequency=120, 
         print_intermediate_tables=True
     )
-    train_fn_with_parameters = tune.with_parameters(inner_nn_tune,
+    train_fn_with_parameters = tune.with_parameters(inner_transformer_tune,
                                                     args=args,
                                                     year_idx=year_idx,
                                                     ckpt_path=ckpt_path,
@@ -221,7 +229,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         test_year_end = val_year_end + args.test_length
         shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
         print(f"Loading model to predict from path: {best_path}")
-        model = FFN.load_from_checkpoint(best_path)
+        model = TransformerEncoder.load_from_checkpoint(best_path)
         dm = DataModule(
             path=args.path_data,
             year_idx=year_idx,

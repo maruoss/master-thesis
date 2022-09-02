@@ -48,7 +48,7 @@ def set_tune_log_dir(args, year_idx, time, config):
     # CAREFUL: will give error if directory path is too large
     train_year_end = 1996 + args.init_train_length + year_idx - 1
     val_year_end = train_year_end + args.val_length
-    loop_path = f"train{train_year_end}_val{val_year_end}"
+    loop_foldername = f"train{train_year_end}_val{val_year_end}"
     # name = time+"\\"+years
 
     # save config space as .json
@@ -62,7 +62,7 @@ def set_tune_log_dir(args, year_idx, time, config):
     with open(exp_path/'args.json', 'w') as f:
         json.dump(args_dict, f, indent=3)
         
-    return val_year_end, loop_path, exp_path
+    return val_year_end, loop_foldername, exp_path
 
 
 def save_time(start_time: datetime):

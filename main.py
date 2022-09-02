@@ -8,6 +8,7 @@ import pandas as pd
 from pytorch_lightning import seed_everything
 from argparse import ArgumentParser
 from trainers.trainer_rf import rf_run
+from trainers.trainer_transformer import transformer_tune
 from trainers.trainer_xgb import xgb_tune
 from utils.helper import save_time, summary_to_csv
 from trainers.trainer_sk import sk_run
@@ -40,6 +41,7 @@ def run(args, year_idx, time, ckpt_path, config):
                 "svm_tune": sk_run,
                 "rf_tune": rf_run,
                 "xgb_tune": xgb_tune,
+                "transformer_tune": transformer_tune,
                 }
 
     # If no checkpoint here -> no refit possible.
@@ -89,7 +91,7 @@ def add_stress_test_param(args):
     for i in it_keys:
         if i in d.keys():
             d[i] = 1 # change to 10 epochs
-    d["num_samples"] = 16  #to test parallelism.
+    d["num_samples"] = 1  #to test parallelism.
 
 
 if __name__ == "__main__":
@@ -106,7 +108,7 @@ if __name__ == "__main__":
     parser_tune.set_defaults(mode="tune") # string can also be a function
 
     # parser_train.add_argument("model", choices=["nn"])
-    parser_tune.add_argument("model", choices=["nn", "lin", "svm", "rf", "xgb"])
+    parser_tune.add_argument("model", choices=["nn", "lin", "svm", "rf", "xgb", "transformer"])
 
     # Parse mode and model first to determine which args to load in load_args.
     args_, _ = parser.parse_known_args()
@@ -136,7 +138,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--stresstest", action="store_true")
     # Tune configuration
     cockpit = parser.add_argument_group("Tune Configuration")
-    cockpit.add_argument("--num_samples", type=int, default=50, help="How many "
+    cockpit.add_argument("--num_samples", type=int, default=30, help="How many "
                         "parameter configurations are sampled.")
     cockpit.add_argument("--gpus_per_trial", type=float, default=0.25) #for 2 gpus, gives 8 parallel trials.
     cockpit.add_argument("--njobs", type=int, default=8) #for 16 cpus, 8 parralel jobs use 2 cpus/trial.
