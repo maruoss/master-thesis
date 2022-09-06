@@ -124,8 +124,6 @@ def prepare_dataset(args):
                     (opt_df["edate"] >= "2020-12-31"))]
     print(f"Done! The merged df after filtering has {len(sp500opt_df_newret)-len(opt_df)} "
         "rows less than the original S&P 500 option return dataset.")
-    # 4 observations are dropped because their date is after the 'edate' of the 
-    # mapping list...
 
     # Load Gu2020 stock data.
     print("Load Gu2020 data...")

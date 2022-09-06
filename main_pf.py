@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pandas.tseries.offsets import MonthEnd
 import quantstats as qs
+import statsmodels.api as sm
 
 from data.utils.convert_check import small_med_big_eq
 from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, export_dfi, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
@@ -28,12 +29,12 @@ def aggregate(args):
     print("Find all 'predictions{year}' files in the subfolders of the experiment "
     "and copy to 'predictions' folder...")
     collect_preds(exp_dir)
-    print("Done!")
+    print("Done.")
     #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
     # Read all prediction .csv and save as "all_pred.csv" in exp_dir.
     print("Read in all prediction .csv files as a dataframe and save as 'all_pred.csv'...")
     preds_concat_df = concat_and_save_preds(exp_dir)
-    print("Done!")
+    print("Done.")
 
     # Get path where datasets reside:
     print("Concat the dataframe with the respective option data...")
@@ -73,7 +74,7 @@ def aggregate(args):
     assert check_eoy(concat_df, eoy_indeces), ("Id 0 and eoy indeces do not match.")
     # Set df_small index back to main index.
     concat_df = concat_df.set_index("index", drop=True)
-    print("Done!")
+    print("Done.")
 
     # Create single weight column 'if_long_short' with -1 for lowest and 1 for 
     # highest predicted class. Rest is 0.
@@ -93,28 +94,28 @@ def aggregate(args):
 
     # Only calculate weighted average for numerical columns (have to drop 'date').
     col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
-    print("Done!")
+    print("Done.")
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
     agg_dict = {}
     for c in classes:
         agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column, col_list, f"weights_{c}")
         agg_dict[f"class{c}"] = agg_df
-    print("Done!")
+    print("Done.")
     
     print("Which classes were not predicted at all in a respective month?...")
     # For each class print out months where no prediction was allocated for that class, 
     # and save these indeces for short and long class to later ignore the returns of 
     # these months.
     class_ignore = get_class_ignore_dates(concat_df, classes) #returns dict
-    print("Done!")
+    print("Done.")
     
     # Perform various tests to check our calculations.
     test_concat = concat_df.copy()
     test_agg_dict = agg_dict.copy()
     print("Sanity test the aggregated results...")
     various_tests(agg_dict, concat_df, col_list, classes, class_ignore)
-    print("Done!")
+    print("Done.")
     # Make sure tests did not alter dataframes.
     pd.testing.assert_frame_equal(test_concat, concat_df)
     for c in classes:
@@ -131,7 +132,7 @@ def aggregate(args):
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
         raise FileExistsError("Directory 'portfolios' already exists. Will not "
         "touch folder and exit code.") from err
-    print("Done!")
+    print("Done.")
 
     print("Create Long Short Portfolio while ignoring months where one side "
         "is not allocated...")
@@ -154,7 +155,7 @@ def aggregate(args):
     cols_to_keep = [col for col in long_short_df.columns.tolist() if "weight" not in col]
     long_short_df = long_short_df[cols_to_keep]
     long_short_df.to_csv(pf_dir/f"long{long_class}short{short_class}.csv")
-    print("Done!")
+    print("Done.")
     print("All done!")
 
 
@@ -181,7 +182,8 @@ def performance(args):
         try:
             df = pd.read_csv(path_portfolios/file, parse_dates=["date"], index_col="date")
         except PermissionError as err:
-            raise PermissionError("The 'portfolios' subfolder must not contain directories.") from err
+            raise PermissionError("The 'portfolios' subfolder must not contain directories."
+                                  "Please move or delete the subdirectory.") from err
             # from err necessary for chaining
         dfs.append(df["option_ret"].rename(file.name[:-4])) #rename Series to filename from portfolios.
     # Sort list in descending order first -> class0, class1, ..., etc.
@@ -189,7 +191,31 @@ def performance(args):
     dfs = pd.concat(dfs, axis=1) # Series names -> column names
     # Capitalize 'date' index name for plot axis label.
     dfs.index = dfs.index.rename("Date")
-    print("Done!")
+    print("Done.")
+
+    # Data path.
+    path_data = Path.cwd()/"data"
+
+    print("Load the Monthly Riskfree rate from the 5 Fama French Factors Dataset...")
+    # Skip first two rows (text description) and omit yearly data (after row 706).
+    monthly_rf = pd.read_csv(path_data/"F-F_Research_Data_5_Factors_2x3.csv", skiprows=2, usecols=["Unnamed: 0", "RF"]).iloc[:706]
+    # Rename Unnamed: 0 to Date and convert to appropriate Datetime format.
+    monthly_rf = monthly_rf.rename(columns={"Unnamed: 0": "Date"})
+    monthly_rf["Date"] = pd.to_datetime(monthly_rf["Date"], format="%Y%m") + MonthEnd(0)
+    monthly_rf = monthly_rf.set_index("Date")
+    # Convert ff columns to float (have been read as strings)
+    monthly_rf["RF"] = monthly_rf["RF"].astype("float")
+    # Divide by 100 (numbers are in percent)
+    monthly_rf =  monthly_rf / 100
+    # Filter months (rows) to align with dfs.
+    monthly_rf = filter_idx(monthly_rf, dfs)
+
+    # Subtract Rf from class portfolio returns to get excess returns.
+    print("Subtract Riskfree rate *only from class* portfolios but *not* from the "
+          "long short portfolio, as the riskfree rate cancels out for the long short "
+          "portfolio...")
+    class_pfs = dfs.columns.str.startswith("class")
+    dfs.loc[:, class_pfs] = dfs.loc[:, class_pfs] - monthly_rf.values #.values needed to broadcast over columns.
 
     # Plot equity line and save to .png.
     print("Plotting equity lines...")
@@ -200,12 +226,14 @@ def performance(args):
     # Make 'results' subfolder.
     path_results = exp_path/"results"
     path_results.mkdir(exist_ok=True, parents=False)
-    plt.savefig(path_results/"plot.png")
-    print("Done!")
+    # Make 'performance' subfolder in 'results' folder.
+    path_results_perf = path_results/"performance"
+    path_results_perf.mkdir(exist_ok=True, parents=False)
+    plt.savefig(path_results_perf/"plot.png")
+    print("Done.")
 
-    # Collect performance statistics. 
-    # RISKFREE rate assumed zero here. Not implemented in the formulas.
-    print("Calculating portfolio performance statistics...")
+    # Collect performance statistics for EXCESS RETURNS (but cancels for long short portfolio).
+    print("Calculating portfolio performance statistics for portfolio (excess) returns...")
     perfstats = []
     periods = 12 # we have monthly (excess) returns (as rf assumed 0.)
 
@@ -238,17 +266,28 @@ def performance(args):
     sharpe_ann_geom = cagr / vol_ann
     sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. Sharpe Ratio (ann.)")
 
-    # Calculate alpha and beta w.r.t. SP500 Total Return index (data from yfinance, see data/utils/sp500.py)
-    # Read data from /data.
-    path_data = Path.cwd()/"data"
-    sp500_monthend = pd.read_csv(path_data/"sp500TR_prices.csv", parse_dates=["Date"], index_col="Date")
-    # Select only relevant eom prices, and one month further back -> to calculate returns.
-    sp500_ret = sp500_monthend.iloc[-len(dfs.index) - 1:]["Adj Close"].pct_change()
-    # Remove first NaN row.
-    sp500_ret = sp500_ret.iloc[1:]
-    # Perform linear regression.
-    X = np.array([np.ones_like(sp500_ret), sp500_ret]).T #bring to shape [1, sp500]
-    alphabetas = np.linalg.inv(X.T@X)@X.T@dfs #regress dfs (y) on [1, sp500] (X)
+    # Calculate alpha and beta w.r.t. FF Excess Market return.
+    print("Load the Market Excess return from the 5 Fama French Factors Dataset...")
+    # Skip first two rows (text description) and omit yearly data (after row 706).
+    mkt_excess_ret = pd.read_csv(path_data/"F-F_Research_Data_5_Factors_2x3.csv", skiprows=2, usecols=["Unnamed: 0", "Mkt-RF"]).iloc[:706]
+    # Rename Unnamed: 0 to Date and convert to appropriate Datetime format.
+    mkt_excess_ret = mkt_excess_ret.rename(columns={"Unnamed: 0": "Date"})
+    mkt_excess_ret["Date"] = pd.to_datetime(mkt_excess_ret["Date"], format="%Y%m") + MonthEnd(0)
+    mkt_excess_ret = mkt_excess_ret.set_index("Date")
+    # Convert ff columns to float (have been read as strings)
+    mkt_excess_ret["Mkt-RF"] = mkt_excess_ret["Mkt-RF"].astype("float")
+    # Divide by 100 (numbers are in percent)
+    mkt_excess_ret =  mkt_excess_ret / 100
+    # Filter months (rows) to align with dfs.
+    mkt_excess_ret = filter_idx(mkt_excess_ret, dfs)
+    print("Done.")
+
+    # Perform linear regression (no HAC adjustment). Should yield same as OLS 
+    # Standard later (but here annualized).
+    # Convert DataFrame to Series, so that X has correct shape.
+    mkt_excess_ret = mkt_excess_ret.squeeze()
+    X = np.array([np.ones_like(mkt_excess_ret), mkt_excess_ret]).T #bring to shape [1, mkt_excess_ret]
+    alphabetas = np.linalg.inv(X.T@X)@X.T@dfs #regress dfs (y) on [1, mkt_excess_ret] (X)
     alphas = alphabetas.iloc[0, :] * periods #annualized alpha
     betas = alphabetas.iloc[1, :]
     alphas_str = alphas.apply(lambda x: f'{x: .3f}').rename("Alpha (ann.)")
@@ -293,19 +332,190 @@ def performance(args):
     print("Save performance statistics to .csv, .png and .txt...")
     # Save results to 'results' subfolder.
     perfstats = pd.concat(perfstats, axis=1)
-    perfstats.to_csv(path_results/"perfstats.csv")
+    perfstats.to_csv(path_results_perf/"perfstats.csv")
     # dfi only accepts strings as paths:
-    export_dfi(perfstats, str(path_results/"perfstats.png"))
+    export_dfi(perfstats, str(path_results_perf/"perfstats.png"))
 
     # Export latex code for table.
-    with (path_results/"latex.txt").open("w") as text_file:
+    with (path_results_perf/"perf_latex.txt").open("w") as text_file:
         text_file.write(perfstats.style.to_latex())
         text_file.write("\n")
         text_file.write("% Same table transposed:\n")
         text_file.write("\n")
         text_file.write(perfstats.T.style.to_latex())
-    print("Done!")
+    print("Done.")
+
+    # ****** Regressions ******
+    print("Explain monthly returns by regressing them on various factors...")
+    print("Load the 5 Fama French factors...")
+    # Skip first two rows (text description) and omit yearly data (after row 706).
+    ff_monthly = pd.read_csv(path_data/"F-F_Research_Data_5_Factors_2x3.csv", skiprows=2).iloc[:706]
+    # Rename Unnamed: 0 to Date and convert to appropriate Datetime format.
+    ff_monthly = ff_monthly.rename(columns={"Unnamed: 0": "Date"})
+    ff_monthly["Date"] = pd.to_datetime(ff_monthly["Date"], format="%Y%m") + MonthEnd(0)
+    ff_monthly = ff_monthly.set_index("Date")
+    # Convert ff columns to float (have been read as strings).
+    for col in ff_monthly.columns:
+        ff_monthly[col] = ff_monthly[col].astype("float")
+    # Divide by 100 (numbers are in percent).
+    ff_monthly =  ff_monthly / 100
+    # Drop riskfree rate column (will not be used as a factor in the regressions).
+    ff_monthly = ff_monthly.drop(columns="RF")
+    print("Done.")
+
+    print("Load the Momentum factor...")
+    # Skip first 13 rows (text description) and omit yearly data (after row 1144).
+    mom_monthly = pd.read_csv(path_data/"F-F_Momentum_Factor.csv", skiprows=13).iloc[:1144]
+    # Rename Unnamed: 0 to Date and convert to appropriate Datetime format.
+    mom_monthly = mom_monthly.rename(columns={"Unnamed: 0": "Date"})
+    mom_monthly["Date"] = pd.to_datetime(mom_monthly["Date"], format="%Y%m") + MonthEnd(0)
+    mom_monthly = mom_monthly.set_index("Date")
+    # Strip whitespace of 'Mom    ' column and rename to all caps 'MOM'.
+    mom_monthly = mom_monthly.rename(columns={mom_monthly.columns.item(): mom_monthly.columns.item().rstrip().upper()})
+    # Convert Mom column to float (have been read as strings):
+    mom_monthly["MOM"] =  mom_monthly["MOM"].astype("float")
+    # Divide by 100 (numbers are in percent).
+    mom_monthly =  mom_monthly / 100
+    print("Done.")
+
+    print("Load the VIX data...")
+    vix = pd.read_csv(path_data/"VIX_History.csv", parse_dates=["DATE"])
+    som_indeces = np.sort(np.concatenate([
+                    np.where(vix["DATE"].dt.month.diff() == 1)[0],
+                    np.where(vix["DATE"].dt.month.diff() == -11)[0]
+                    ]))
+    vix_monthly = vix.iloc[som_indeces - 1].rename(columns={"DATE": "Date"})
+    vix_monthly = vix_monthly.set_index("Date")
+    vix_monthly.index = vix_monthly.index + MonthEnd(0)
+    vix_monthly = vix_monthly["CLOSE"].rename("VIX")
+    print("Done.")
+
+    print("Load the VVIX data...")
+    vvix = pd.read_csv(path_data/"VVIX_History.csv", parse_dates=["DATE"])
+    som_indeces = np.sort(np.concatenate([
+                    np.where(vvix["DATE"].dt.month.diff() == 1)[0],
+                    np.where(vvix["DATE"].dt.month.diff() == -11)[0]
+                    ]))
+    vvix_monthly = vvix.iloc[som_indeces - 1].rename(columns={"DATE": "Date"})
+    vvix_monthly = vvix_monthly.set_index("Date")
+    vvix_monthly.index = vvix_monthly.index + MonthEnd(0)
+    print("Done.")
+
+    # Variable of interest (y). We want to explain the monthly long short PF returns.
+    long_short_ret = dfs["long4short0"]
+
+    # Align the months of the following dataframes with the long short dataframe.
+    list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
+    # Filter months to align with long short portfolio.
+    for i in range(len(list_to_filter)):
+        list_to_filter[i] = filter_idx(list_to_filter[i], long_short_ret)
+    # Unpack list to filter
+    vix_monthly, vvix_monthly, ff_monthly, mom_monthly = list_to_filter
+    # Concat all independent variables to regress them on the long short portfolio.
+    factors_avail = pd.concat([vix_monthly, vvix_monthly, ff_monthly, mom_monthly], axis=1)
+    # Columns: 'VIX', 'VVIX', 'Mkt-RF', 'SMB', 'HML', 'RMW', 'CMA', 'MOM'.
+    
+    # Perform several linear regressions with various factors and save results in
+    # results directory.
+    print("Perform linear regressions according to the CAPM, 3FF model and 5FF model "
+            "to try to explain the monthly long short portfolio returns...")
+    regression_map = {
+                    "CAPM":                 ["Mkt-RF"],
+                    "CAPM_MOM":             ["Mkt-RF", "MOM"],
+                    "CAPM_MOM_VIX":         ["Mkt-RF", "MOM", "VIX"],
+                    "CAPM_MOM_VIX_VVIX":    ["Mkt-RF", "MOM", "VIX", "VVIX"],
+                    "3FF":                  ["Mkt-RF", "SMB", "HML"],
+                    "3FF_MOM":              ["Mkt-RF", "SMB", "HML", "MOM"],
+                    "3FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "MOM", "VIX"],
+                    "3FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "MOM", "VIX", "VVIX"],
+                    "5FF":                  ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
+                    "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
+                    "5FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX"],
+                    "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
+    }
+
+    # Regress the regressions specified in regression_map on long_short portfolio return.
+    regress_factors(regression_map, factors_avail, long_short_ret, path_results)
+    print("Done.")
+
     print("All done!")
+
+
+def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
+    """Filters indeces of 'df' to align with index of 'df_target'.
+    
+    Returns: Filtered DataFrame.
+    """
+    return df.loc[df.index[np.isin(df.index, df_target.index)]]
+
+def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Series, path_results: Path) -> None:
+    """Performs each relevant regression from the 'regression_map' dictionary and 
+    saves results as .txt (latex) and .csv files. in an accordingly named folder
+    in 'path_results'. 
+
+        Args:
+            factors:        All independent variables concatenated in a Dataframe.
+            y:              The dependent variable (long short monthly portfolio returns here).
+            path_results:   The path where the results folder resides.
+    
+    """
+
+    for regr_key in regression_map.keys():
+        parent_path = path_results/regr_key
+        parent_path.mkdir(exist_ok=True, parents=False)
+        X = factors_avail.loc[:, regression_map[regr_key]]
+        # Add constant for intercept.
+        X = sm.add_constant(X)
+
+        # 1a. Regression. No HAC Standard Errors.
+        ols = sm.OLS(y, X) #long_short_return regressed on X.
+        ols_result = ols.fit()
+        regr_type = "Standard"
+        save_ols_results(ols_result, parent_path, regr_type)
+
+        # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
+        max_lags = int(len(X)**(1/4))
+        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags})
+        regr_type = f"HAC_{max_lags}"
+        save_ols_results(ols_result, parent_path, regr_type)
+
+        # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
+        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12})
+        regr_type = "HAC_12"
+        save_ols_results(ols_result, parent_path, regr_type)
+
+
+def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
+    """Saves results from statsmodels.OLS to .txt and .csv files in a separate 
+    folder in the 'parent_path' path.
+
+        Args:
+            ols_result:             Object from ols.fit().summary()
+            ols_result2:            Object from ols.fit().summary2()
+            parent_path (Path):    Path to the results folder.
+            foldername (str):       Name of the folder to be created at results/foldername.
+    
+    """
+    # Create separate folder to save the regression results in.
+    # reg_folder = parent_path/foldername
+    # reg_folder.mkdir(exist_ok=True, parents=False)
+    # 3 LaTeX files.
+    with (parent_path/f"{fileprefix}_result_latex1.txt").open("w") as text_file:
+        text_file.write("OLS Summary (For Loop):\n\n")
+        for table in ols_result.summary(alpha=0.05).tables:
+            text_file.write(table.as_latex_tabular())
+    with (parent_path/f"{fileprefix}_result_latex2.txt").open("w") as text_file:
+        text_file.write("OLS Summary as LaTeX:\n\n")
+        text_file.write(ols_result.summary(alpha=0.05).as_latex())
+    with (parent_path/f"{fileprefix}_result_latex3.txt").open("w") as text_file:
+        text_file.write("OLS Summary2 as LaTeX:\n\n")
+        text_file.write(ols_result.summary2(alpha=0.05).as_latex())
+    # 1 .txt file.
+    with (parent_path/f"{fileprefix}_result.txt").open("w") as text_file:
+        text_file.write(ols_result.summary().as_text())
+    # 1 .csv file.
+    with (parent_path/f"{fileprefix}_result.csv").open("w") as text_file:
+        text_file.write(ols_result.summary().as_csv())
 
 
 if __name__ == "__main__":
@@ -321,7 +531,6 @@ if __name__ == "__main__":
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
     
-
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "
                         "given by time created")

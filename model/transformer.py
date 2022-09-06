@@ -13,7 +13,7 @@ import pytorch_lightning as pl
 
 
 class TransformerEncoder(pl.LightningModule):
-    """Stacked Transformer Blocks for Return Classification.
+    """Stacked Transformer Encoder Blocks for Return Classification.
     
     Args:
         d (int): The embedding dimension (for our data, no embedding, d=1).
@@ -81,6 +81,8 @@ class TransformerEncoder(pl.LightningModule):
     def forward(self, x):
         if len(x.size()) == 2:
             x = x.unsqueeze(dim=-1) #[b, l, 1]
+        else:
+            raise ValueError("Dimension of each feature has to be 1 before embedding them.")
         x = self.first(x) #[b, l, d]
         x = self.transformer_blocks(x) #[b, l, d]
         x = self.seclast(x) #[b, l, 1]

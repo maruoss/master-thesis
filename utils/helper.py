@@ -90,7 +90,7 @@ def save_time(start_time: datetime):
 
 
 def del_transformer_ckpts(loop_dir: Path):
-    """Delete transformer model checkpoints after saving best, to not overload drive storage."""
+    """Delete all files called 'checkpoint' in loop dir."""
     for file in loop_dir.iterdir():
         if file.is_dir():
 #             print(file)
