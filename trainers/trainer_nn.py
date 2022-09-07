@@ -227,7 +227,7 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
         del_ckpts(loop_path)
         print("Done!")
         print(f"Loading model to predict from path: {new_best_path}")
-        model = FFN.load_from_checkpoint(best_path)
+        model = FFN.load_from_checkpoint(new_best_path)
         dm = DataModule(
             path=args.path_data,
             year_idx=year_idx,
