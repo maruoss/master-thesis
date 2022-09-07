@@ -5,7 +5,7 @@ import pandas as pd
 import dataframe_image as dfi
 from tqdm import tqdm
 
-def collect_preds(exp_dir: Path):
+def collect_preds(exp_dir: Path) -> None:
     """Copies all predictions????.csv to a 'predictions' folder within the
     experiment_directory."""
     preds_dir = exp_dir/"predictions"
@@ -28,7 +28,7 @@ def collect_preds(exp_dir: Path):
                     print(f"File {file.name} already exists in '{preds_dir.name}' folder.")
 
 
-def concat_and_save_preds(exp_dir: Path):
+def concat_and_save_preds(exp_dir: Path) -> pd.DataFrame:
     """Read prediction????.csv files from the 'predictions' folder in the experiment
     directory and return the concatenated pandas dataframe.
     

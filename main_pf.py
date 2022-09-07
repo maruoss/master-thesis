@@ -174,7 +174,8 @@ def performance(args):
     assert len(matches_list) == 1, "there exists more than 1 folder with given expid!"
     exp_path = matches_list[0]
 
-    # Read aggregated portfolios.
+    # Read aggregated portfolios. RETURNS are from 02/1996 to 11/2021. Because
+    # predictions are made at e.g. 31-10-2021, but the return is from the month 11/2021. 
     print("Reading aggregated portfolios from 'portfolios' folder...")
     path_portfolios = exp_path/"portfolios"
     dfs = []

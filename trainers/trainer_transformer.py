@@ -12,7 +12,7 @@ import torch
 
 from datamodule import DataModule
 from model.transformer import TransformerEncoder
-from utils.helper import del_transformer_ckpts, set_tune_log_dir
+from utils.helper import del_ckpts, set_tune_log_dir
 from utils.logger import serialize_config
 from model.neuralnetwork import FFN
 
@@ -228,11 +228,11 @@ def nn_tune_from_config(args, year_idx, time, ckpt_path, config: dict):
                         "checkpoint")
         # Copy best model checkpoint to loop folder for later analysis.
         test_year_end = val_year_end + args.test_length
-        shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
-        # ONLY FOR TRANSFORMERS: delete all other checkpoints (take huge disk space).
         new_best_path = loop_path/f"best_ckpt{test_year_end}"
+        shutil.copy2(best_path, new_best_path)
+        # To save disk space: Delete all other checkpoints (take huge disk space).
         print("Delete checkpoints in trials to save disk space...")
-        del_transformer_ckpts(loop_path)
+        del_ckpts(loop_path)
         print("Done!")
         print(f"Loading model to predict from path: {new_best_path}")
         model = TransformerEncoder.load_from_checkpoint(new_best_path)
