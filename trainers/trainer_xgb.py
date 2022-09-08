@@ -17,7 +17,7 @@ import shutil
 
 from datamodule import Dataset
 from utils.logger import serialize_config
-from utils.helper import set_tune_log_dir
+from utils.helper import del_ckpts, set_tune_log_dir
 
 
 
@@ -232,10 +232,15 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                         "checkpoint")
         # Copy best model to loop folder for later analysis.
         test_year_end = val_year_end + args.test_length
-        shutil.copy2(best_path, loop_path/f"best_ckpt{test_year_end}")
-        print(f"Loading model from path at {best_path}")
+        new_best_path = loop_path/f"best_ckpt{test_year_end}"
+        shutil.copy2(best_path, new_best_path)
+        # To save disk space: Delete all other checkpoints (take huge disk space).
+        print("Delete checkpoints in trials to save disk space...")
+        del_ckpts(loop_path)
+        print("Done!")
+        print(f"Loading model to predict from path: {new_best_path}")
         best_bst = xgb.Booster()
-        best_bst.load_model(best_path)
+        best_bst.load_model(new_best_path)
 
         # Get test data and labels.
         X_test, y_test = data.get_test()

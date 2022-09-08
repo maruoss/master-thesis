@@ -9,7 +9,7 @@ from pandas.tseries.offsets import MonthEnd
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import make_column_transformer
 
-from sic_codes import add_sic_manually
+from data.utils.sic_codes import add_sic_manually
 
 
 def calc_opt_ret(df: pd.DataFrame) -> pd.DataFrame:
@@ -41,6 +41,47 @@ def call_opt_ret(df: pd.DataFrame, opt_ids: list) -> pd.DataFrame:
             else:
                 df.loc[idx, "option_ret"] = None
     return df
+
+
+def feature_engineer(data):
+    """
+    Arguments:
+    data: pandas.DataFrame that must have specific columns.
+
+    """
+    # Bid-Ask spread: (Ask - Bid) / Ask
+    data["best_bid"] = (data["best_offer"] - data["best_bid"]) / (data["best_offer"])
+    data = data.rename(columns={"best_bid": "ba_spread_option"}).drop(["best_offer"], axis=1)
+
+    # Gamma: multiply by spotprice and divide by 100
+    data["gamma"] = data["gamma"] * data["spotprice"] / 100 #following Bali et al. (2021)
+
+    # Theta: scale by spotprice
+    data["theta"] = data["theta"] / data["spotprice"] #following Bali et al. (2021)
+
+    # Vega: scale by spotprice
+    data["vega"] = data["vega"] / data["spotprice"] #following Bali et al. (2021)
+
+    # Time to Maturity: scale by number of days in year: 365
+    data["days_to_exp"] = data["days_to_exp"] / 365
+
+    # Moneyness: Strike / Spot (K / S)
+    data["strike_price"] = data["strike_price"] / data["spotprice"] # K / S
+    data = data.rename(columns={"strike_price": "moneyness"})
+
+    # Forward Price ratio: Forward / Spot
+    data["forwardprice"] = data["forwardprice"] / data["spotprice"]
+
+    # Drop redundant/ unimportant columns
+    data = data.drop(["cfadj", 
+                    "days_no_trading", 
+                    "spotprice", 
+                    "adj_spot",
+                    "forwardprice",
+                    "ir_rate"
+                    ], axis=1)
+
+    return data
 
 
 def prepare_dataset(args):
@@ -222,9 +263,10 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     small_df_columns = (final_df.iloc[:, :19].columns
                     .append(final_df.loc[:, ["option_ret"]].columns))
     small_final_df = final_df.loc[:, small_df_columns]
-    small_final_df.to_parquet(path/filename) # 20 columns. (old 22, cp_flags not necessary anymore)
+    # Feature engineer the data.
+    small_final_df = feature_engineer(small_final_df)
+    small_final_df.to_parquet(path/filename) # 13 columns.
     
-    # elif args.size == "medium": # 114 columns. (old: 116, cp flags removed)
     # Medium dataset takes all option + stock data but no sic onehot columns.
     if args.fill_na:  # NaNs filled.
         filename = prefix + f"_med_fill{args.fill_fn}.parquet"
@@ -233,16 +275,19 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     # Remove all sic codes from big dataset to get medium.
     medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')]
     medium_final_df = medium_final_df.drop(columns=["cp_flag_C"])
-    medium_final_df.to_parquet(path/filename) # 114 columns.
+    # Feature engineer the data.
+    medium_final_df = feature_engineer(medium_final_df)
+    medium_final_df.to_parquet(path/filename) # 107 columns.
 
-    # elif args.size == "big": # 176 columns. (old: 179, {'cp flags, 'sic2_41.0'} are removed for call_cao.
     # Big dataset leaves data as it is.
     if args.fill_na: # NaNs filled.
         filename= prefix + f"_big_fill{args.fill_fn}.parquet"
     else: # NaNs not filled
         filename = prefix + "_big_nofill.parquet"
     final_df = final_df.drop(columns=["cp_flag_C"]) # Drop cp_flag_C.
-    final_df.to_parquet(path/filename) # 176 columns.
+    # Feature engineer the data.
+    final_df = feature_engineer(final_df)
+    final_df.to_parquet(path/filename) # 169 columns.
 
     print(f"The final dataframes small, medium and big with specifications:\nfill_na: {args.fill_na}, "
           f"\nfill_fn: {args.fill_fn}\nhas been saved to {path/filename} .")

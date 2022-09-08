@@ -89,7 +89,7 @@ def save_time(start_time: datetime):
     return time_dict, end_time
 
 
-def del_ckpts(loop_dir: Path):
+def del_ckpts(loop_dir: Path) -> None:
     """Delete all files called 'checkpoint' in loop dir."""
     for file in loop_dir.iterdir():
         if file.is_dir():

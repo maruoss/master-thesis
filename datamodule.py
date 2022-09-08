@@ -47,8 +47,8 @@ class DataModule(pl.LightningDataModule):
         self.data = self.data.iloc[:self.eoy_test]
         assert len(self.data) == self.eoy_test, "length of data is not equal to eoy_test"
             
-        # feature engineer data
-        self.data = feature_engineer(self.data)
+        # # feature engineer data
+        # self.data = feature_engineer(self.data)
         
         # create y
         self.y = self.data["option_ret"]
@@ -335,13 +335,13 @@ class Dataset():
         return parent_parser
 
 
-def load_data(path: Path, dataset: str):
-    """Loads dataset from path, depending on specified size."""
+def load_data(data_path: Path, dataset: str):
+    """Loads specific dataset from path, depending on specified size."""
     if dataset == "small":
-        return pd.read_parquet(path/"final_df_call_cao_small.parquet")
+        return pd.read_parquet(data_path/"final_df_call_cao_small.parquet")
     elif dataset == "medium":
-        return pd.read_parquet(path/"final_df_call_cao_med_fillmean.parquet")
+        return pd.read_parquet(data_path/"final_df_call_cao_med_fillmean.parquet")
     elif dataset == "big":
-        return pd.read_parquet(path/"final_df_call_cao_big_fillmean.parquet")
+        return pd.read_parquet(data_path/"final_df_call_cao_big_fillmean.parquet")
     else:
-        raise ValueError("Specify dataset as either 'small' or 'big'")
+        raise ValueError("Specify dataset as either 'small', 'medium' or big'")
