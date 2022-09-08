@@ -140,7 +140,7 @@ if __name__ == "__main__":
     cockpit = parser.add_argument_group("Tune Configuration")
     cockpit.add_argument("--num_samples", type=int, default=30, help="How many "
                         "parameter configurations are sampled.")
-    cockpit.add_argument("--gpus_per_trial", type=float, default=0.5) #for 1 gpu, gives 4 parallel trials.
+    cockpit.add_argument("--gpus_per_trial", type=float, default=0.25) #for 1 gpu, gives 4 parallel trials.
     cockpit.add_argument("--njobs", type=int, default=8) #for 16 cpus, 8 parralel jobs use 2 cpus/trial.
     # ASHA
     cockpit.add_argument("--grace_pct", type=float, default=0.2, 
