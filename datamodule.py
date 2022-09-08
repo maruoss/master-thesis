@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.model_selection import PredefinedSplit
 import torch
 
-from utils.preprocess import YearEndIndeces, binary_categorize, feature_engineer, multi_categorize
+from utils.preprocess import YearEndIndeces, binary_categorize, multi_categorize
 from torch.utils.data import TensorDataset, DataLoader
 import pytorch_lightning as pl
 from pathlib import Path
@@ -213,7 +213,7 @@ class Dataset():
         assert len(self.data) == self.eoy_test, "length of data is not equal to eoy_test"
             
         # feature engineer data
-        self.data = feature_engineer(self.data)
+        # self.data = feature_engineer(self.data)
         
         # create y
         self.y = self.data["option_ret"]
