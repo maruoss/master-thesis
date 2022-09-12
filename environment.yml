@@ -21,6 +21,7 @@ dependencies:
   - tensorboard
   - yfinance
   - dataframe_image
+  - statsmodels
   - pip:
     - pyarrow==8.0.0
     - ray==1.13.0

@@ -1,17 +1,20 @@
 from argparse import ArgumentParser
 from pathlib import Path
 import pdb
+import time
+from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import statsmodels.api as sm
 
+from tqdm import tqdm
+from sklearn.metrics import balanced_accuracy_score
 from data.utils.convert_check import small_med_big_eq
-from portfolio.helper import (
-                            check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred,
-                            get_class_ignore_dates, get_yearidx_bestmodelpaths, regress_factors, save_performance_statistics, various_tests, 
-                            weighted_means_by_column
-                            )
+from datamodule import load_data
+from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, regress_factors, save_performance_statistics, various_tests, weighted_means_by_column
+from portfolio.helper_featureimp import aggregate_newpred, check_y, get_yearidx_bestmodelpaths, pred_on_data, regress_on_constant
+
+
 from portfolio.load_files import load_ff_monthly, load_mom_monthly, load_pfret_from_pfs, load_rf_monthly, load_vix_monthly, load_vvix_monthly
 from utils.preprocess import YearMonthEndIndeces
 
@@ -35,12 +38,12 @@ def aggregate(args):
     #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
     # Read all prediction .csv and save as "all_pred.csv" in exp_dir.
     print("Read in all prediction .csv files as a dataframe and save as 'all_pred.csv'...")
-    preds_concat_df = concat_and_save_preds(exp_dir)
+    preds_concat_df = concat_and_save_preds(exp_dir) #shape: [index, columns: [id, pred]]
     print("Done.")
 
     # Get path where datasets reside:
     print("Concat the dataframe with the respective option data...")
-    datapath = Path.cwd()/"data"
+    path_data = Path.cwd()/"data"
     # Check whether small, med, big are all equal (whether we predicted on same 
     # test data ordering!)
     # Takes 11 secs., uncomment for final production code.
@@ -49,7 +52,7 @@ def aggregate(args):
     # print("Dates and option return columns from small, medium and big datasets are "
     #         "equal!")
     # Get small dataset (irrespective of small/medium/big used for train!).
-    df_small = pd.read_parquet(datapath/"final_df_call_cao_small.parquet")
+    df_small = pd.read_parquet(path_data/"final_df_call_cao_small.parquet")
     dates = df_small["date"]
     # Get args from experiment.
     # Alternatively: Load json with json.load() and convert dict/list to df.
@@ -266,81 +269,178 @@ def performance(args):
     # Regress the regressions specified in regression_map on long_short portfolio return.
     regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results)
     print("Done.")
-
     print("All done!")
 
 
-def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
-    """Filters indeces of 'df' to align with index of 'df_target'.
+def feature_importance(args):
+    start_time = time.time()
+    # Get experiment path.
+    logs_folder = Path.cwd()/"logs"
+    matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
+    matches_list = list(matches)
+    assert len(matches_list) == 1, "there exists none or more than 1 folder with given expid!"
+    exp_path = matches_list[0]
+    # Get experiment args.
+    args_exp = pd.read_json(exp_path/"args.json", typ="series")
+    # Get original predictions.
+    preds_orig = pd.read_csv(exp_path/"all_pred.csv", index_col=0) #shape [index, cols: ["id", "pred"]]
+    # Get (year_idx, best_model_path) for each year into a list.
+    # Note: year_idx starts at 0.
+    yearidx_bestmodelpaths = get_yearidx_bestmodelpaths(exp_path)
+    # Data path.
+    path_data = Path.cwd()/"data"
+    # Load original feature_target dataframe to permute.
+    # Note: pd.read_csv does not load 'date' column as datetime, in contrast to pd.read_parquet!
+    orig_feature_target = load_data(path_data, args_exp.dataset)
+    # List of features (columns of orig_feature_target).
+    features_list = orig_feature_target.columns.tolist()
+    features_list.remove("date")
+    features_list.remove("option_ret")
+    # How many sample permutation per feature?
+    num_samples_per_feature = 20
+    # Original long short monthly pf returns?
+    path_portfolios = exp_path/"portfolios"
+    if int(args_exp.label_fn[-1:]) == 5: # 5 class classification.
+        # Note: pd.read_csv does not load 'date' column as datetime automatically, 
+        # in contrast to pd.read_parquet!
+        long_short_pf = pd.read_csv(path_portfolios/"long4short0.csv", parse_dates=["date"], index_col="date")
+        long_short_pf_ret_orig = long_short_pf["option_ret"]
+    else:
+        raise NotImplementedError("Feature randomization only implemented for "
+                                  "5 class classification for now")
+    # Aggregate original optionreturns to sanity check long_short portfolio returns.
+    test = orig_feature_target[["date", "option_ret"]].copy()
+    check_orig = aggregate_newpred(preds_orig, test, args_exp)
+    assert (abs(long_short_pf_ret_orig - check_orig) < 0.00001).all(), ("Loaded "
+    "aggregated option returns have substantial differences to the check aggregation of the "
+    "original option returns.")
+    # ****
+
+    results = loop_features(orig_feature_target=orig_feature_target, 
+                         features_list=features_list, 
+                         yearidx_bestmodelpaths=yearidx_bestmodelpaths,
+                         preds_orig=preds_orig,
+                         num_samples_per_feature=num_samples_per_feature,
+                         args_exp=args_exp,
+                         long_short_pf_ret_orig=long_short_pf_ret_orig
+                         )
+
+    end_time = time.time()
+    print("Finished. Feature importance completed in", end_time - start_time, "seconds.")
+
+
+def loop_features(
+                orig_feature_target: pd.DataFrame,
+                features_list: list, 
+                yearidx_bestmodelpaths: Tuple[int, Path],
+                preds_orig: pd.DataFrame,
+                num_samples_per_feature: int,
+                args_exp: pd.Series,
+                long_short_pf_ret_orig: pd.Series,
+                ) -> pd.DataFrame:
+    results = {}
+    for feature in tqdm(features_list): # approx. 22sec per feature per sample.
+        diff_bal_acc_scores = [] #list
+        diff_ls_ret_avg_ols = {} #dict of list
+        for k in range(num_samples_per_feature):
+            result = loop_years(orig_feature_target=orig_feature_target,
+                                feature=feature,
+                                yearidx_bestmodelpaths=yearidx_bestmodelpaths,
+                                preds_orig=preds_orig,
+                                args_exp=args_exp,
+                                long_short_pf_ret_orig=long_short_pf_ret_orig,
+                                k=k
+                                )
+            diff_bal_acc_scores.append(result["diff_bal_acc_score"])
+            diff_ls_ret_avg_ols.setdefault("mean", []).append(result["diff_long_short_ret"][0])
+            for key in result["diff_long_short_ret"][1]: #second element of list
+                diff_ls_ret_avg_ols.setdefault(key, []).append(result["diff_long_short_ret"][1][key])
+            
+        # 1. Regress bal_acc_score means on intercept.
+        mean_diff_bal_acc = np.mean(diff_bal_acc_scores)
+        diff_bal_acc_ols = regress_on_constant(diff_bal_acc_scores)
+        # Is the mean equal to the coefficient of the OLS regression on the intercept?
+        for i in diff_bal_acc_ols.keys():
+            assert abs(diff_bal_acc_ols[i]["Coef."].item() - mean_diff_bal_acc) < 0.00001, (
+                f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
+        # We are only interested in a certain test statistic.
+        # stat_of_interest = ["P>|t", "t"]
+        # diff_bal_acc_ols_reduced = {key: values for (key, values) in diff_bal_acc_ols.items() if key in stat_of_interest}
+        mean_diff_bal_acc_ols = (mean_diff_bal_acc, diff_bal_acc_ols)
+        # 2. Average OLS results of monthly return differences. #NOTE: ols t-stats 
+        # and p-values are also averaged.
+        mean_ls_ret_avg = np.mean(diff_ls_ret_avg_ols["mean"])
+        diff_ls_ret_avg_ols = {key: pd.concat(values).mean() for (key, values) 
+                                in diff_ls_ret_avg_ols.items() if key != "mean"}
+        # We are only interested in a certain test statistic.
+        # diff_ls_ret_avg_ols_reduced = {key: values for (key, values) in diff_ls_ret_avg_ols.items() if key in stat_of_interest}
+        # Output tuple.
+        mean_diff_ls_ret_avg_ols = (mean_ls_ret_avg, diff_ls_ret_avg_ols)
     
-    Returns: Filtered DataFrame.
-    """
-    return df.loc[df.index[np.isin(df.index, df_target.index)]]
+        # Collect results for each feature.
+        results[f"{feature}"] = {"bal_acc_meandiff": mean_diff_bal_acc_ols, "pf_return_meanofmeandiff": mean_diff_ls_ret_avg_ols}
+    return results
 
 
-        Args:
-            factors:        All independent variables concatenated in a Dataframe.
-            y:              The dependent variable (long short monthly portfolio returns here).
-            path_results:   The path where the results folder resides.
+def loop_years(
+            orig_feature_target: pd.DataFrame,
+            feature: str,
+            yearidx_bestmodelpaths: list,
+            preds_orig: pd.DataFrame,
+            args_exp: pd.Series,
+            long_short_pf_ret_orig: pd.Series,
+            k,
+            ) -> Dict[Tuple[float, float], float]: # (mean of monthly difference, t-value), (difference bal_acc score)
     
-    """
-
-    for regr_key in regression_map.keys():
-        parent_path = path_results/regr_key
-        parent_path.mkdir(exist_ok=True, parents=False)
-        X = factors_avail.loc[:, regression_map[regr_key]]
-        # Add constant for intercept.
-        X = sm.add_constant(X)
-
-        # 1a. Regression. No HAC Standard Errors.
-        ols = sm.OLS(y, X) #long_short_return regressed on X.
-        ols_result = ols.fit()
-        regr_type = "Standard"
-        save_ols_results(ols_result, parent_path, regr_type)
-
-        # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
-        max_lags = int(len(X)**(1/4))
-        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags})
-        regr_type = f"HAC_{max_lags}"
-        save_ols_results(ols_result, parent_path, regr_type)
-
-        # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
-        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12})
-        regr_type = "HAC_12"
-        save_ols_results(ols_result, parent_path, regr_type)
-
-
-def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
-    """Saves results from statsmodels.OLS to .txt and .csv files in a separate 
-    folder in the 'parent_path' path.
-
-        Args:
-            ols_result:             Object from ols.fit().summary()
-            ols_result2:            Object from ols.fit().summary2()
-            parent_path (Path):     Path to the results folder.
-            foldername (str):       Name of the folder to be created at results/foldername.
+    #TODO: permute feature dataset
+    # permuted_feature_target_df = permute_feature(orig_feature_target_df, feature)
+    permuted_feature_target_df = orig_feature_target
     
-    """
-    # Create separate folder to save the regression results in.
-    # reg_folder = parent_path/foldername
-    # reg_folder.mkdir(exist_ok=True, parents=False)
-    # 3 LaTeX files.
-    with (parent_path/f"{fileprefix}_result_latex1.txt").open("w") as text_file:
-        text_file.write("OLS Summary (For Loop):\n\n")
-        for table in ols_result.summary(alpha=0.05).tables:
-            text_file.write(table.as_latex_tabular())
-    with (parent_path/f"{fileprefix}_result_latex2.txt").open("w") as text_file:
-        text_file.write("OLS Summary as LaTeX:\n\n")
-        text_file.write(ols_result.summary(alpha=0.05).as_latex())
-    with (parent_path/f"{fileprefix}_result_latex3.txt").open("w") as text_file:
-        text_file.write("OLS Summary2 as LaTeX:\n\n")
-        text_file.write(ols_result.summary2(alpha=0.05).as_latex())
-    # 1 .txt file.
-    with (parent_path/f"{fileprefix}_result.txt").open("w") as text_file:
-        text_file.write(ols_result.summary().as_text())
-    # 1 .csv file.
-    with (parent_path/f"{fileprefix}_result.csv").open("w") as text_file:
-        text_file.write(ols_result.summary().as_csv())
+    # Which model was used in the experiment and has to be used also here?
+    model_name = args_exp.model #string
+
+    # Get predictions on permuted feature data for each year and concatenate.
+    preds_new_list = []
+    for yearidx, bestmodelpath in yearidx_bestmodelpaths: #should be in ascending order.
+        print(f"Loading trained model: '{model_name}' to predict on randomized feature from path: {bestmodelpath}")
+        preds_new_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target_df, args_exp)
+        preds_new_list.append(preds_new_year)
+    # Check true y vectors from different sources. Takes 'y_new' from the last 
+    # for loop iteration -> should be the whole y of the data.
+    check_y(y, orig_feature_target, args_exp.label_fn)
+    preds_new = pd.concat(preds_new_list).reset_index() #shape [index, [index, pred]]
+    # Rename "index" to "id". (The checks look for a column 'id' since the 
+    # original predictions first column is also named 'id'. # CRUCIAL for aggregate function later.
+    preds_new = preds_new.rename(columns={"index": "id"})
+    # Get the relevant y vector corresponding to the test period (the predictions made accordingly).
+    y_true = y[-len(preds_orig):] #last y_year is the y of the whole dataset.
+    # Check whether length of y_true, preds_orig and preds_new are the same.
+    if not (len(y_true) == len(preds_orig) == len(preds_new)):
+        raise ValueError("The true y values and the predictions do not coincide in length.")
+
+    # 1. Output: Get difference of test balanced accuracy scores.
+    bal_acc_test_orig = balanced_accuracy_score(y_true, preds_orig["pred"]) 
+    bal_acc_test_new = balanced_accuracy_score(y_true, preds_new["pred"])
+    diff_bal_acc_scores = bal_acc_test_orig - bal_acc_test_new # Expected to be positive!
+
+    # 2. Output: Get mean difference of monthly long-short portfolio returns.
+    # Perform aggregation for new predictions.
+    option_ret_to_agg = orig_feature_target[["date", "option_ret"]]
+    long_short_pf_ret_new = aggregate_newpred(preds_new, option_ret_to_agg, args_exp) #aggregate preds after randomizing a feature.
+    long_short_pf_ret_diff = long_short_pf_ret_orig - long_short_pf_ret_new.values
+    long_short_pf_ret_diff_mean = long_short_pf_ret_diff.mean()
+    #Regress differences with zero intercept model.
+    # Is mean statistically significantly different from 0? -> Regress on intercept.
+    # Standard OLS, HAC_maxlags, and HAC12 variants.
+    ols_results = regress_on_constant(long_short_pf_ret_diff)
+    # OLS coefficients and mean of difference should be equal (up to floating errors).
+    for i in ols_results.keys():
+        assert abs(ols_results[i]["Coef."].item() - long_short_pf_ret_diff_mean) < 0.00001, (f"Mean and "
+        "OLS coefficient are not equal for key {i}.")
+    results = {}
+    results["diff_bal_acc_score"] = diff_bal_acc_scores
+    results["diff_long_short_ret"] = [long_short_pf_ret_diff_mean, ols_results]
+    return results
 
 
 if __name__ == "__main__":
@@ -355,6 +455,9 @@ if __name__ == "__main__":
 
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
+
+    parser_perf = subparsers.add_parser("importance")
+    parser_perf.set_defaults(mode=feature_importance)
     
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "

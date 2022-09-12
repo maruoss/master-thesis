@@ -88,6 +88,7 @@ def check_month_years(dic, dates):
                 return False
     return True
 
+
 # Checks whether rows with id of 0 correspond to start of new years.
 def check_eoy(concat_df: pd.DataFrame, eoy_indeces: np.ndarray):
     """Checks whether start of year (eoy indeces) rows correspond to id 0 in 
@@ -504,36 +505,3 @@ def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
     # 1 .csv file.
     with (parent_path/f"{fileprefix}_result.csv").open("w") as text_file:
         text_file.write(ols_result.summary().as_csv())
-
-
-def get_yearidx_bestmodelpaths(exp_path: Path) -> list:
-    """Search exp_path for 'best_ckpt????' files and save their paths into a list.
-    Then sort the path and enumerate it to get a list of tuples (idx, best_ckpt_path).
-
-        Returns:
-            idx_bestmodelpaths (list): Enumerated best checkpoint paths in the
-                                        experiment path.
-    """
-    best_ckpt_paths = []
-    for directory in exp_path.iterdir():
-        if directory.is_dir() and directory.name != "predictions" and directory.name != "portfolios":
-            # See https://docs.python.org/3/library/fnmatch.html#module-fnmatch
-            # for filename pattern matching below.
-            for file in directory.glob("best_ckpt????"):
-                # If files do not exist in 'predictions' folder yet
-                best_ckpt_paths.append(file.resolve())
-    # IMPORTANT: Sort best ckpt paths that were read in, in ascending order.
-    best_ckpt_paths = sorted(best_ckpt_paths, key=lambda x: int(str(x)[-4:]))
-    # Append corresponding year_idx to each best_model_path.
-    idx_bestmodelpaths = list(enumerate(best_ckpt_paths))
-    # Check if year_idx and bestckpts are in the correct order.
-    prev_year = -9999
-    for yearidx, bestckpt_path in idx_bestmodelpaths:
-        year = int(str(bestckpt_path)[-4:])
-        if year > prev_year:
-            print(f"({yearidx}, {year})\t is the correct (year_idx, year) tuple!")
-            continue
-        else:
-            raise ValueError("(year_idx, bestmodel_ckpt_path) are not in the "
-                             "correct ascending order.")
-    return idx_bestmodelpaths
