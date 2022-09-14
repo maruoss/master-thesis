@@ -94,7 +94,7 @@ def check_y(y: np.array, orig_feature_target: pd.DataFrame, label_fn: str) -> No
 
 
 def aggregate_newpred(preds_concat_df: pd.DataFrame, 
-                    option_ret_to_agg: pd.DataFrame, # Is only used for the data/ indeces check.
+                    option_ret_to_agg: pd.DataFrame, # Is used for the data aggregation/ indeces check.
                     args_exp: pd.Series
                     ) -> pd.Series:
     """Aggregate orig_feature_df into class portfolios depending on the predictions made in preds_concat_df.
@@ -175,7 +175,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     assert short_class == 0, "Class of short portfolio not 0. Check why."
     long_class = classes[-1] #should be 2 for binary, 3 for 'multi3', etc.
     print(f"Subtract Short portfolio (class {short_class}) from Long portfolio "
-            f"(class {long_class}) and save to long{long_class}short{short_class}.csv...")
+            f"(class {long_class})...")
     # Subtract short from long portfolio.
     long_df = agg_dict[f"class{long_class}"].copy() #deep copy to not change original agg_dict
     short_df = agg_dict[f"class{short_class}"].copy() #deep copy to not change original agg_dict
@@ -185,11 +185,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     long_short_df = long_df - short_df #months that are 0 in both dfs stay 0 everywhere.
     assert ((long_short_df.drop(months_no_inv)["pred"] == (long_class - short_class)).all() and #'pred' should be long_class - short_class
             (long_short_df.drop(months_no_inv)["if_long_short"] == 2).all()) #'if_long_short' should be 2 (1 - (-1) = 2)
-    # Drop one-hot "weight" columns here.
-    # cols_to_keep = [col for col in long_short_df.columns.tolist() if "weight" not in col]
-    # long_short_df = long_short_df[cols_to_keep]
     print("Done.")
-    print("All done!")
     return long_short_df["option_ret"]
 
 
@@ -217,6 +213,7 @@ def pred_on_data(
             deterministic=True,
             gpus=1, #gpu fixed to be one here.
             logger=False, #deactivate logging for prediction
+            enable_progress_bar=False,
         )
         # Predict.
         preds = trainer.predict(model=model, datamodule=dm) #returns list of batch predictions.

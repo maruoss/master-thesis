@@ -49,6 +49,9 @@ def feature_engineer(data):
     data: pandas.DataFrame that must have specific columns.
 
     """
+    # To be sure we work on a copy.
+    data = data.copy()
+    
     # Bid-Ask spread: (Ask - Bid) / Ask
     data["best_bid"] = (data["best_offer"] - data["best_bid"]) / (data["best_offer"])
     data = data.rename(columns={"best_bid": "ba_spread_option"}).drop(["best_offer"], axis=1)
@@ -160,9 +163,9 @@ def prepare_dataset(args):
 
     # Filter opt_df to only contain dates that are within 'sdate' and 'edate'.
     # 'date' is used instead of 'exdate', more rows are preserved -> seems more logical.
-    opt_df = opt_df[(opt_df["date"] >= opt_df["sdate"]) & 
-                    ((opt_df["date"] <= opt_df["edate"]) | 
-                    (opt_df["edate"] >= "2020-12-31"))]
+    opt_df = opt_df[(opt_df["date"] >= opt_df["sdate"]) 
+                    & ((opt_df["date"] <= opt_df["edate"]) 
+                    | (opt_df["edate"] >= "2020-12-31"))]
     print(f"Done! The merged df after filtering has {len(sp500opt_df_newret)-len(opt_df)} "
         "rows less than the original S&P 500 option return dataset.")
 
@@ -177,8 +180,8 @@ def prepare_dataset(args):
     # datashare directory. They aligned their data by pushing features forward.
     # Now, we have to push them back again, since in our data the return was lagged.
     print("Clean Gu2020 data...")
-    gu2020_df["DATE"] = pd.to_datetime(gu2020_df["DATE"].astype(str), 
-                                        format='%Y%m%d') - MonthEnd(1)
+    gu2020_df["DATE"] = pd.to_datetime(gu2020_df["DATE"]
+                        .astype(str), format='%Y%m%d') - MonthEnd(1)
 
     # Adds missing sic codes manually, after verifying them with given sources.
     gu2020_df = add_sic_manually(gu2020_df)
@@ -261,8 +264,8 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     filename = prefix + "_small.parquet"
     # Only keep first 19 columns + the target 'option_ret'
     small_df_columns = (final_df.iloc[:, :19].columns
-                    .append(final_df.loc[:, ["option_ret"]].columns))
-    small_final_df = final_df.loc[:, small_df_columns]
+                        .append(final_df.loc[:, ["option_ret"]].columns))
+    small_final_df = final_df.loc[:, small_df_columns].copy()
     # Feature engineer the data.
     small_final_df = feature_engineer(small_final_df)
     small_final_df.to_parquet(path/filename) # 13 columns.
@@ -273,7 +276,7 @@ def save_df(path: Path, final_df: pd.DataFrame, args: Namespace):
     else: # NaNs not filled.
         filename = prefix + "_med_nofill.parquet"
     # Remove all sic codes from big dataset to get medium.
-    medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')]
+    medium_final_df = final_df.loc[:, ~final_df.columns.str.startswith('sic2')].copy()
     medium_final_df = medium_final_df.drop(columns=["cp_flag_C"])
     # Feature engineer the data.
     medium_final_df = feature_engineer(medium_final_df)

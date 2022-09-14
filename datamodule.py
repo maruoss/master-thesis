@@ -126,18 +126,18 @@ class DataModule(pl.LightningDataModule):
             print(f"# of validation samples: {len(self.y_val)} with X_val of shape: {self.X_val.shape}")
             print(f"# of test samples: {len(self.y_test)} with X_test of shape: {self.X_test.shape}")
             print("---")
-            print(f"train start date: ", self.dates.iloc[0].strftime("%Y-%m-%d"), 
-                ", train end date: ", self.dates.iloc[:self.eoy_train].iloc[-1].strftime("%Y-%m-%d"))
-            print(f"val start date: ", self.dates.iloc[self.eoy_train:self.eoy_val].iloc[0].strftime("%Y-%m-%d"), 
-                ", val end date: ", self.dates.iloc[self.eoy_train:self.eoy_val].iloc[-1].strftime("%Y-%m-%d"))
-            print(f"test start date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[0].strftime("%Y-%m-%d"), 
-                ", test end date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[-1].strftime("%Y-%m-%d"))
+            print(f"Train start date: ", self.dates.iloc[0].strftime("%Y-%m-%d"), 
+                ", Train end date: ", self.dates.iloc[:self.eoy_train].iloc[-1].strftime("%Y-%m-%d"))
+            print(f"Val start date: ", self.dates.iloc[self.eoy_train:self.eoy_val].iloc[0].strftime("%Y-%m-%d"), 
+                ", Val end date: ", self.dates.iloc[self.eoy_train:self.eoy_val].iloc[-1].strftime("%Y-%m-%d"))
+            print(f"Test start date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[0].strftime("%Y-%m-%d"), 
+                ", Test end date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[-1].strftime("%Y-%m-%d"))
             print("*****************************************************************************************")
         else:
             print("*****************************************************************************************")
-            print(f"test start date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[0].strftime("%Y-%m-%d"), 
-                ", test end date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[-1].strftime("%Y-%m-%d"))
-            print("*****************************************************************************************")
+            print(f"Test start date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[0].strftime("%Y-%m-%d"), 
+                ", Test end date: ", self.dates.iloc[self.eoy_val:self.eoy_test].iloc[-1].strftime("%Y-%m-%d"))
+
 
 
     def example(self):

@@ -2,7 +2,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 import pdb
 import time
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -273,6 +273,12 @@ def performance(args):
 
 
 def feature_importance(args):
+    # Ignore warnings as to not clutter the terminal here.
+    import warnings
+    warnings.filterwarnings('ignore')
+    import logging
+    logging.getLogger("pytorch_lightning").setLevel(logging.WARNING)
+
     start_time = time.time()
     # Get experiment path.
     logs_folder = Path.cwd()/"logs"
@@ -325,6 +331,108 @@ def feature_importance(args):
                          long_short_pf_ret_orig=long_short_pf_ret_orig
                          )
 
+    # # Sort results after 'bal_acc_meandiff' mean value ([0][0] entry) in DESCENDING (reverse=True) order.
+    # results_sorted_balacc = sorted(results.items(), key=lambda item: list(item[1].values())[0][0], reverse=True)
+    # results_sorted_balacc_df = pd.DataFrame(results_sorted_balacc)
+    # index = results_sorted_balacc_df.iloc[:, 0] # feature names are in first column -> new index.
+    # # Normalize dict. -> bal_acc_meandiff, etc. will be column names.
+    # results_sorted_balacc_df = pd.json_normalize(results_sorted_balacc_df[1])
+    # results_sorted_balacc_df.index = index
+    # results_sorted_balacc_df.index.name = None #delete name of table
+    # # Sort results after 'meanofmeandiff' mean value ([1][0] entry) in DESCENDING (reverse=True) order.
+    # results_sorted_meanofmeandiffpf = sorted(results.items(), key=lambda item: list(item[1].values())[1][0], reverse=True)
+    # results_sorted_meanofmeandiffpf_df = pd.DataFrame(results_sorted_meanofmeandiffpf)
+    # index = results_sorted_meanofmeandiffpf_df.iloc[:, 0] # feature names are in first column -> new index.
+    # # Normalize dict. -> bal_acc_meandiff, etc. will be column names.
+    # results_sorted_meanofmeandiffpf_df = pd.json_normalize(results_sorted_meanofmeandiffpf_df[1])
+    # results_sorted_meanofmeandiffpf_df.index = index
+    # results_sorted_meanofmeandiffpf_df.index.name = None #delete name of table
+
+    results_sorted_balacc = dict(sorted(results.items(), key= lambda item: item[1]["balacc_meandiff"]["Mean"], reverse=True))
+    results_sorted_meanofmeandiffpf = dict(sorted(results.items(), key= lambda item: item[1]["pfret_momdiff"]["Mean"], reverse=True))
+
+    # Add significance key.
+    def add_significance_key(results: dict) -> dict:
+        features = list(results.keys())
+        measures = list(results[features[0]].keys()) #Assumes all feature have the same keys.
+        for feature in features:
+            for measure in measures:
+                # Measures have dynamic HAC_{max_lags} standard error correction.
+                se_methods = [key for key in results[feature][measure].keys() if key != "Mean"]
+                for se in se_methods:
+                    significance = ""
+                    #TODO: pf_ret_meanofmean doesnt have "const" -> catch exception.
+                    try:
+                        p_value = results[feature][measure][se]["P>|t|"]["const"]
+                    except TypeError:
+                        p_value = results[feature][measure][se]["P>|t|"]
+                    if p_value <= 0.1 and p_value > 0.05:
+                        significance = "*"
+                    elif p_value <= 0.05 and p_value > 0.01:
+                        significance = "**"
+                    elif p_value <= 0.01:
+                        significance = "***"
+                    results[feature][measure][se]["Significance"] = significance
+        return results
+    
+    results_sorted_balacc = add_significance_key(results_sorted_balacc)
+    results_sorted_meanofmeandiffpf = add_significance_key(results_sorted_meanofmeandiffpf)
+
+    # Prepare to save.
+    def prepare_to_save(results: dict) -> pd.DataFrame:
+        features = list(results.keys())
+        measures = [key for key, values in results.values()]
+        feature_collect = []
+        for feature in features:
+            measure_collect = []
+            for measure in measures:
+                measure_collect.append(pd.json_normalize(results[feature][measure]))
+            measure_collect = pd.concat(measure_collect, keys=measures, axis=1)
+            feature_collect.append(measure_collect)
+        feature_collect = pd.concat(feature_collect, axis=0)
+        #TODO: feature names in index.
+        return feature_collect
+
+    results_sorted_balacc_df = prepare_to_save(results_sorted_balacc)
+    results_sorted_meanofmeandiffpf_df = prepare_to_save(results_sorted_meanofmeandiffpf)
+
+    # index = list(results.keys())
+    # test = pd.concat([pd.json_normalize(x) for x in results.values()])
+    # test2 = pd.DataFrame.from_dict({(i,j): results[i][j] for i in results.keys() for j in results[i].keys()}, orient='index')
+
+    # pdb.set_trace()
+
+    # #Add extra column with statistical significance to dataframes.
+    # def add_stat_significance(df_sorted):
+    #     metrics = list(df_sorted.columns)
+    #     for metric in tqdm(metrics):
+    #         for feature in list(df_sorted.index):
+    #             ols_result = df_sorted.loc[feature].loc[metric][1]
+    #             for se in list(ols_result.keys()):
+    #                 string = "*" #TODO
+    #                 df_sorted.loc[feature, f"{metric}_signif_{se}"] = string
+    #     return df_sorted
+    
+    # results_sorted_balacc_df = add_stat_significance(results_sorted_balacc_df)
+    # results_sorted_meanofmeandiffpf_df = add_stat_significance(results_sorted_meanofmeandiffpf_df)
+
+    # # Convert ols result dataframes to lists for nicer saving.
+    # def df_to_list(x):
+    #     if isinstance(x, str): # ignore significance '*' cells.
+    #         return x 
+    #     return pd.melt(pd.json_normalize(x[1])).values.tolist()
+
+    # pdb.set_trace()
+
+    # results_sorted_balacc_df = results_sorted_balacc_df.applymap(df_to_list)
+    # results_sorted_meanofmeandiffpf_df = results_sorted_meanofmeandiffpf_df.applymap(df_to_list)
+
+    #Save sorted results.
+    path_importance = exp_path/"results"/"importance"
+    path_importance.mkdir(exist_ok=True, parents=False)
+    results_sorted_balacc_df.to_csv(path_importance/"balaccmeandiff_sorted_TEST.csv")
+    results_sorted_meanofmeandiffpf_df.to_csv(path_importance/"meanofmeandiffpf_sorted_TEST.csv")
+
     end_time = time.time()
     print("Finished. Feature importance completed in", end_time - start_time, "seconds.")
 
@@ -342,43 +450,40 @@ def loop_features(
     for feature in tqdm(features_list): # approx. 22sec per feature per sample.
         diff_bal_acc_scores = [] #list
         diff_ls_ret_avg_ols = {} #dict of list
-        for k in range(num_samples_per_feature):
+        for _ in range(num_samples_per_feature):
             result = loop_years(orig_feature_target=orig_feature_target,
                                 feature=feature,
                                 yearidx_bestmodelpaths=yearidx_bestmodelpaths,
                                 preds_orig=preds_orig,
                                 args_exp=args_exp,
                                 long_short_pf_ret_orig=long_short_pf_ret_orig,
-                                k=k
                                 )
             diff_bal_acc_scores.append(result["diff_bal_acc_score"])
-            diff_ls_ret_avg_ols.setdefault("mean", []).append(result["diff_long_short_ret"][0])
-            for key in result["diff_long_short_ret"][1]: #second element of list
+            diff_ls_ret_avg_ols.setdefault("Mean", []).append(result["diff_long_short_ret"][0])
+            for key in result["diff_long_short_ret"][1]:
                 diff_ls_ret_avg_ols.setdefault(key, []).append(result["diff_long_short_ret"][1][key])
             
         # 1. Regress bal_acc_score means on intercept.
-        mean_diff_bal_acc = np.mean(diff_bal_acc_scores)
         diff_bal_acc_ols = regress_on_constant(diff_bal_acc_scores)
+        diff_bal_acc_ols = {key: values.to_dict() for (key, values) 
+                                in diff_bal_acc_ols.items()}
+        mean_dict = {"Mean": np.mean(diff_bal_acc_scores)} #in order to move "Mean" to the beginning.
+        diff_bal_acc_ols = {**mean_dict, **diff_bal_acc_ols}
         # Is the mean equal to the coefficient of the OLS regression on the intercept?
-        for i in diff_bal_acc_ols.keys():
-            assert abs(diff_bal_acc_ols[i]["Coef."].item() - mean_diff_bal_acc) < 0.00001, (
-                f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
-        # We are only interested in a certain test statistic.
-        # stat_of_interest = ["P>|t", "t"]
-        # diff_bal_acc_ols_reduced = {key: values for (key, values) in diff_bal_acc_ols.items() if key in stat_of_interest}
-        mean_diff_bal_acc_ols = (mean_diff_bal_acc, diff_bal_acc_ols)
-        # 2. Average OLS results of monthly return differences. #NOTE: ols t-stats 
-        # and p-values are also averaged.
-        mean_ls_ret_avg = np.mean(diff_ls_ret_avg_ols["mean"])
-        diff_ls_ret_avg_ols = {key: pd.concat(values).mean() for (key, values) 
-                                in diff_ls_ret_avg_ols.items() if key != "mean"}
-        # We are only interested in a certain test statistic.
-        # diff_ls_ret_avg_ols_reduced = {key: values for (key, values) in diff_ls_ret_avg_ols.items() if key in stat_of_interest}
-        # Output tuple.
-        mean_diff_ls_ret_avg_ols = (mean_ls_ret_avg, diff_ls_ret_avg_ols)
-    
-        # Collect results for each feature.
-        results[f"{feature}"] = {"bal_acc_meandiff": mean_diff_bal_acc_ols, "pf_return_meanofmeandiff": mean_diff_ls_ret_avg_ols}
+        # for i in diff_bal_acc_ols.keys():
+        #     if i != "Mean":
+        #         assert abs(diff_bal_acc_ols[i]["Coef."].item() - diff_bal_acc_ols["Mean"]) < 0.00001, (
+        #             f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
+
+        # 2. Average OLS results of monthly return differences.
+        mean_dict = {"Mean": np.mean(diff_ls_ret_avg_ols["Mean"])} #in order to move "Mean" to the beginning.
+        diff_ls_ret_avg_ols = {key: pd.concat(values).mean().to_dict() for (key, values) 
+                                in diff_ls_ret_avg_ols.items() if key != "Mean"}
+        diff_ls_ret_avg_ols = {**mean_dict, **diff_ls_ret_avg_ols}
+        
+        # Collect results for each feature. Short key name for better csv. layout.
+        results[f"{feature}"] = {"balacc_meandiff": diff_bal_acc_ols, "pfret_momdiff": diff_ls_ret_avg_ols}
+        
     return results
 
 
@@ -389,12 +494,11 @@ def loop_years(
             preds_orig: pd.DataFrame,
             args_exp: pd.Series,
             long_short_pf_ret_orig: pd.Series,
-            k,
-            ) -> Dict[Tuple[float, float], float]: # (mean of monthly difference, t-value), (difference bal_acc score)
+            ) -> Dict[float, List[float]]: # (mean of monthly difference, t-value), (difference bal_acc score)
     
-    #TODO: permute feature dataset
-    # permuted_feature_target_df = permute_feature(orig_feature_target_df, feature)
-    permuted_feature_target_df = orig_feature_target
+    # Permute feature.
+    permuted_feature_target = orig_feature_target.copy()
+    permuted_feature_target[feature] = np.random.permutation(permuted_feature_target[feature])
     
     # Which model was used in the experiment and has to be used also here?
     model_name = args_exp.model #string
@@ -403,7 +507,7 @@ def loop_years(
     preds_new_list = []
     for yearidx, bestmodelpath in yearidx_bestmodelpaths: #should be in ascending order.
         print(f"Loading trained model: '{model_name}' to predict on randomized feature from path: {bestmodelpath}")
-        preds_new_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target_df, args_exp)
+        preds_new_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target, args_exp)
         preds_new_list.append(preds_new_year)
     # Check true y vectors from different sources. Takes 'y_new' from the last 
     # for loop iteration -> should be the whole y of the data.
@@ -421,7 +525,7 @@ def loop_years(
     # 1. Output: Get difference of test balanced accuracy scores.
     bal_acc_test_orig = balanced_accuracy_score(y_true, preds_orig["pred"]) 
     bal_acc_test_new = balanced_accuracy_score(y_true, preds_new["pred"])
-    diff_bal_acc_scores = bal_acc_test_orig - bal_acc_test_new # Expected to be positive!
+    diff_bal_acc_scores = bal_acc_test_orig - bal_acc_test_new # Expected to be positive! More positive -> more important feature.
 
     # 2. Output: Get mean difference of monthly long-short portfolio returns.
     # Perform aggregation for new predictions.
@@ -462,7 +566,10 @@ if __name__ == "__main__":
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "
                         "given by time created")
+    cockpit.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
+
+    np.random.seed(args.seed) # Only relevant for feature importance permutation.
     
     args.mode(args) #aggreagte or performance
