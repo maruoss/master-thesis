@@ -4,10 +4,12 @@ import pandas as pd
 import numpy as np
 import torch
 import pytorch_lightning as pl
+from pandas.api.types import is_numeric_dtype
 
 from datamodule import DataModule
 from model.neuralnetwork import FFN
 from portfolio.helper import check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
+from portfolio.utils import add_signif_stars_df
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
 
 
@@ -50,7 +52,8 @@ def get_yearidx_bestmodelpaths(exp_path: Path) -> list:
 
 def regress_on_constant(y: pd.Series) -> dict:
     """Regress y on a constant -> Test the signficance of the mean being
-    different from 0. Perform OLS with standard and two HAC Standard errors."""
+    different from 0. Perform OLS with standard and two HAC Standard errors.
+    Additionally, add significance stars to the statsmodels summary2 output."""
     # Create X, just 1's for the intercept.
     X = np.ones_like(y)
     
@@ -58,19 +61,22 @@ def regress_on_constant(y: pd.Series) -> dict:
     # # 1a. Regression. No HAC Standard Errors.
     ols = sm.OLS(y, X) #long_short_return regressed on X.
     result_fit = ols.fit()
-    # p_value = ols_result.summary2().tables[1]["P>|t|"].item() 
-    ols_results["Standard"] = result_fit.summary2().tables[1]
+    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
+    table1 = add_signif_stars_df(table1)
+    ols_results["Standard"] = table1
 
     # # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
     max_lags = int(len(X)**(1/4))
     result_fit = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
-    # p_value = ols_result.summary2().tables[1]["P>|t|"].item() 
-    ols_results[f"HAC_{max_lags}"] = result_fit.summary2().tables[1]
+    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
+    table1 = add_signif_stars_df(table1)
+    ols_results[f"HAC_{max_lags}"] = table1
 
     # # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
     result_fit = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
-    # p_value = ols_result.summary2().tables[1]["P>|t|"].item() 
-    ols_results["HAC_12"] = result_fit.summary2().tables[1]
+    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
+    table1 = add_signif_stars_df(table1)
+    ols_results["HAC_12"] = table1
     return ols_results
 
 
@@ -224,3 +230,47 @@ def pred_on_data(
         # y_true (of the whole data available, not only test dates).
         y_new = dm.y.numpy()
         return preds_argmax_df, y_new
+
+
+# def add_significance_key(results: dict) -> dict:
+#     features = list(results.keys())
+#     measures = list(results[features[0]].keys()) #Assumes all feature have the same keys.
+#     for feature in features:
+#         for measure in measures:
+#             # Measures have dynamic HAC_{max_lags} standard error correction.
+#             se_methods = [key for key in results[feature][measure].keys() if key != "Mean"]
+#             for se in se_methods:
+#                 significance = ""
+#                 #pf_ret_meanofmean doesnt have "const" -> catch exception.
+#                 try:
+#                     p_value = results[feature][measure][se]["P>|t|"]["const"]
+#                 except TypeError:
+#                     p_value = results[feature][measure][se]["P>|t|"]
+#                 if p_value <= 0.1 and p_value > 0.05:
+#                     significance = "*"
+#                 elif p_value <= 0.05 and p_value > 0.01:
+#                     significance = "**"
+#                 elif p_value <= 0.01:
+#                     significance = "***"
+#                 results[feature][measure][se]["Significance"] = significance
+#     return results
+
+
+def mean_str(col):
+    """Takes mean of numeric columns in a dataframe, but handles string 
+    columns by returning the count of signif. stars '*'. """
+    if is_numeric_dtype(col):
+        return col.mean()
+    else:
+        return col.str.count("\*").mean()
+
+
+def mean_str_add_stars(df) -> dict:
+    """Take mean of columns of df. '*' will be counted
+    int string columns and the mean and the corresponding number of
+    '*' will be added in a new column.
+    """
+    series_mean = df.apply(mean_str)
+    num_stars = int(series_mean["Signif."])
+    series_mean["SignifStars"] = num_stars * "*"
+    return series_mean.to_dict()

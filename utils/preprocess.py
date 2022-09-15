@@ -1,7 +1,4 @@
-import pdb
 import numpy as np
-
-from portfolio.helper import check_month_years
 
 
 # Binary y label generator.
@@ -176,3 +173,29 @@ class YearMonthEndIndeces:
     def get_indeces(self):
         # Return Tuple.
         return (self.test_eoy, self.month_idx_per_year)
+
+
+def check_month_years(dic, dates):
+    """Checks whether all end of month indeces in the dictionary 'dic'
+    are in the correct year. Also, checks whether all indeces are in
+    consecutive order. 31.12.2019[31.01.2020,......,31.12.2020, 31.01.2021]
+    
+    The last month of the eom indeces overlaps with the first entry in
+    the next year.
+
+    ---
+    Example:
+        If a year has 12 months in the data, the end of month indeces should 
+        have length 13. The first index is the first "row" of the year, 
+        the last index is the first row of the next year.
+    """
+    for year in dic.keys():
+        len_dic = len(dic[year])
+        for idx, eom_idx in enumerate(dic[year]):
+            # Special case: last eom_idx is first eom_idx of next year.
+            if idx == len_dic - 1: #idx uses zero indexing.
+                if int(year) != dates[eom_idx-1].year or (idx)!= dates[eom_idx-1].month:
+                    return False
+            elif int(year) != dates[eom_idx].year or (idx+1) != dates[eom_idx].month:
+                return False
+    return True

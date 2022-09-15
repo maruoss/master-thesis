@@ -10,6 +10,7 @@ import quantstats as qs
 import statsmodels.api as sm
 
 from portfolio.load_files import load_mkt_excess_ret_monthly
+from portfolio.utils import add_signif_stars_df
 
 
 def collect_preds(exp_dir: Path) -> None:
@@ -61,32 +62,6 @@ def concat_and_save_preds(exp_dir: Path) -> pd.DataFrame:
     preds_concat_df = pd.concat(preds).reset_index(drop=True)
     preds_concat_df.to_csv(exp_dir/"all_pred.csv")
     return preds_concat_df
-
-
-def check_month_years(dic, dates):
-    """Checks whether all end of month indeces in the dictionary 'dic'
-    are in the correct year. Also, checks whether all indeces are in
-    consecutive order. 31.12.2019[31.01.2020,......,31.12.2020, 31.01.2021]
-    
-    The last month of the eom indeces overlaps with the first entry in
-    the next year.
-
-    ---
-    Example:
-        If a year has 12 months in the data, the end of month indeces should 
-        have length 13. The first index is the first "row" of the year, 
-        the last index is the first row of the next year.
-    """
-    for year in dic.keys():
-        len_dic = len(dic[year])
-        for idx, eom_idx in enumerate(dic[year]):
-            # Special case: last eom_idx is first eom_idx of next year.
-            if idx == len_dic - 1: #idx uses zero indexing.
-                if int(year) != dates[eom_idx-1].year or (idx)!= dates[eom_idx-1].month:
-                    return False
-            elif int(year) != dates[eom_idx].year or (idx+1) != dates[eom_idx].month:
-                return False
-    return True
 
 
 # Checks whether rows with id of 0 correspond to start of new years.
@@ -459,19 +434,19 @@ def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Ser
         # 1a. Regression. No HAC Standard Errors.
         ols = sm.OLS(y, X) #long_short_return regressed on X.
         ols_result = ols.fit()
-        regr_type = "Standard"
-        save_ols_results(ols_result, parent_path, regr_type)
+        fileprefix = "Standard"
+        save_ols_results(ols_result, parent_path, fileprefix)
 
         # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
         max_lags = int(len(X)**(1/4))
         ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
-        regr_type = f"HAC_{max_lags}"
-        save_ols_results(ols_result, parent_path, regr_type)
+        fileprefix = f"HAC_{max_lags}"
+        save_ols_results(ols_result, parent_path, fileprefix)
 
         # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
         ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
-        regr_type = "HAC_12"
-        save_ols_results(ols_result, parent_path, regr_type)
+        fileprefix = "HAC_12"
+        save_ols_results(ols_result, parent_path, fileprefix)
 
 
 def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
@@ -482,26 +457,47 @@ def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
             ols_result:             Object from ols.fit().summary()
             ols_result2:            Object from ols.fit().summary2()
             parent_path (Path):     Path to the results folder.
-            foldername (str):       Name of the folder to be created at results/foldername.
+            fileprefix (str):       Prefix name of the file.
     
     """
-    # Create separate folder to save the regression results in.
-    # reg_folder = parent_path/foldername
-    # reg_folder.mkdir(exist_ok=True, parents=False)
     # 3 LaTeX files.
-    with (parent_path/f"{fileprefix}_result_latex1.txt").open("w") as text_file:
-        text_file.write("OLS Summary (For Loop):\n\n")
-        for table in ols_result.summary(alpha=0.05).tables:
-            text_file.write(table.as_latex_tabular())
-    with (parent_path/f"{fileprefix}_result_latex2.txt").open("w") as text_file:
-        text_file.write("OLS Summary as LaTeX:\n\n")
-        text_file.write(ols_result.summary(alpha=0.05).as_latex())
-    with (parent_path/f"{fileprefix}_result_latex3.txt").open("w") as text_file:
+    # with (parent_path/f"{fileprefix}_result_latex1.txt").open("w") as text_file:
+    #     text_file.write("OLS Summary (For Loop):\n\n")
+    #     for table in ols_result.summary(alpha=0.05).tables:
+    #         text_file.write(table.as_latex_tabular())
+    # NOTE: summary() doesnt work with adding significance stars + layout is not as nice.
+    with (parent_path/f"{fileprefix}_latex.txt").open("w") as text_file:        
         text_file.write("OLS Summary2 as LaTeX:\n\n")
-        text_file.write(ols_result.summary2(alpha=0.05).as_latex())
-    # 1 .txt file.
-    with (parent_path/f"{fileprefix}_result.txt").open("w") as text_file:
-        text_file.write(ols_result.summary().as_text())
+        summary2 = ols_result.summary2(alpha=0.05)
+        summary2.tables[1] = add_signif_stars_df(summary2.tables[1])
+        summary2.tables[0] = replace_scale_with_cov_type(summary2.tables[0], 
+                                                        fileprefix)
+        text_file.write(summary2.as_latex())
+        text_file.write("\n\n\nOLS Summary as LaTeX:\n\n")
+        text_file.write(ols_result.summary(alpha=0.05).as_latex())
+    # .txt file.
+    with (parent_path/f"{fileprefix}.txt").open("w") as text_file:
+        text_file.write(summary2.as_text())
     # 1 .csv file.
-    with (parent_path/f"{fileprefix}_result.csv").open("w") as text_file:
-        text_file.write(ols_result.summary().as_csv())
+    with (parent_path/f"{fileprefix}_summary1.csv").open("w") as text_file:
+        text_file.write(ols_result.summary(alpha=0.05).as_csv())
+    # 2. .csv file
+    with (parent_path/f"{fileprefix}_summary2.csv").open("w") as text_file:
+        for idx, df in enumerate(summary2.tables):
+            # Only print rows and cols for table1, where they are annotated.
+            if idx==1: 
+                df.to_csv(text_file, line_terminator="\n")
+            else:
+                df.to_csv(text_file, line_terminator="\n", index=False, header=False)
+            # text_file.write("\n")
+
+
+
+def replace_scale_with_cov_type(ols_summary2_table0: pd.DataFrame, 
+                                cov_type: str
+                                ) -> pd.DataFrame:
+    """Summary2 does not have the cov type by default in its tables. Here we replace
+    the 'Scale' statistic at location (6, 2) and (6, 3) with the covariance type."""
+    ols_summary2_table0.iloc[6, 2] = "Cov. Type"
+    ols_summary2_table0.iloc[6, 3] = cov_type
+    return ols_summary2_table0
