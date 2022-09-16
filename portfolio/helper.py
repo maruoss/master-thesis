@@ -1,4 +1,6 @@
+from glob import escape
 from pathlib import Path
+import re
 import shutil
 import numpy as np
 import pandas as pd
@@ -8,6 +10,7 @@ import matplotlib.pyplot as plt
 from pandas.tseries.offsets import MonthEnd
 import quantstats as qs
 import statsmodels.api as sm
+from portfolio.stargazer import Stargazer
 
 from portfolio.load_files import load_mkt_excess_ret_monthly
 from portfolio.utils import add_signif_stars_df
@@ -226,17 +229,16 @@ def export_dfi(df: pd.DataFrame, path: str) -> None:
         raise OSError("Try different dataframe .png exporter.") from err
 
 
-def export_latex(df: pd.DataFrame, path_results_perf: Path) -> None:
+def export_latex(df: pd.DataFrame, path: Path) -> None:
     """Export the dataframe and the dataframe transposed in a .txt file 
-    in LaTeX format to the 'path_results_perf' path.
+    in LaTeX format to the path.
     """
-    with (path_results_perf/"perf_latex.txt").open("w") as text_file:
+    with path.open("w") as text_file:
         text_file.write(df.style.to_latex())
         text_file.write("\n")
         text_file.write("% Same table transposed:\n")
         text_file.write("\n")
         text_file.write(df.T.style.to_latex())
-    print("Done.")
 
 
 def get_class_ignore_dates(concat_df: pd.DataFrame, classes: list) -> dict:
@@ -397,20 +399,13 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
                 ]
 
     print("Save performance statistics to .csv, .png and .txt...")
-    # Save results to 'results' subfolder.
+    # .csv file.
     perfstats = pd.concat(perfstats, axis=1)
     perfstats.to_csv(path_results_perf/"perfstats.csv")
-    # dfi only accepts strings as paths:
+    # dfi only accepts strings as paths.
     export_dfi(perfstats, str(path_results_perf/"perfstats.png"))
-
-    # Export latex code for table.
-    with (path_results_perf/"perf_latex.txt").open("w") as text_file:
-        text_file.write(perfstats.style.to_latex())
-        text_file.write("\n")
-        text_file.write("% Same table transposed:\n")
-        text_file.write("\n")
-        text_file.write(perfstats.T.style.to_latex())
-    print("Done.")
+    # Export perfstats dataframe to LaTeX code.
+    export_latex(perfstats, path_results_perf/"perf_latex.txt" )
 
 
 def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Series, path_results: Path) -> None:
@@ -424,29 +419,59 @@ def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Ser
             path_results:   The path where the results folder resides.
     
     """
-    for regr_key in regression_map.keys():
-        parent_path = path_results/regr_key
-        parent_path.mkdir(exist_ok=True, parents=False)
-        X = factors_avail.loc[:, regression_map[regr_key]]
-        # Add constant for intercept.
-        X = sm.add_constant(X)
+    # Save every single regression in its own folder.
+    collect_group = {}
+    for group in regression_map.keys():
+        group_map = regression_map[group]
+        for regr_key in group_map.keys():
+            parent_path = path_results/group/regr_key
+            parent_path.mkdir(exist_ok=True, parents=True) #create group parent folder if it doesnt exist.
+            X = factors_avail.loc[:, group_map[regr_key]]
+            # Add constant for intercept.
+            X = sm.add_constant(X)
 
-        # 1a. Regression. No HAC Standard Errors.
-        ols = sm.OLS(y, X) #long_short_return regressed on X.
-        ols_result = ols.fit()
-        fileprefix = "Standard"
-        save_ols_results(ols_result, parent_path, fileprefix)
+            # 1a. Regression. No HAC Standard Errors.
+            ols = sm.OLS(y, X) #long_short_return regressed on X.
+            ols_result = ols.fit()
+            fileprefix = "Standard"
+            save_ols_results(ols_result, parent_path, fileprefix)
+            # Append to dict for stargazer summary.
+            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
 
-        # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
-        max_lags = int(len(X)**(1/4))
-        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
-        fileprefix = f"HAC_{max_lags}"
-        save_ols_results(ols_result, parent_path, fileprefix)
+            # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
+            max_lags = int(len(X)**(1/4))
+            ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
+            fileprefix = f"HAC_{max_lags}"
+            save_ols_results(ols_result, parent_path, fileprefix)
+            # Append to dict for stargazer summary.
+            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
 
-        # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
-        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
-        fileprefix = "HAC_12"
-        save_ols_results(ols_result, parent_path, fileprefix)
+            # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
+            ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
+            fileprefix = "HAC_12"
+            save_ols_results(ols_result, parent_path, fileprefix)
+            # Append to dict for stargazer summary.
+            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
+    
+    # Save results in stargazer format (group regressions side-by-side).
+    for group in collect_group.keys():
+        for cov_type in collect_group[group].keys():
+            stargazer = Stargazer(collect_group[group][cov_type])
+            # Model names.
+            model_names = sorted(list(regression_map[group].keys()))
+            stargazer.custom_columns(model_names, [1]*len(model_names))
+            # Covariate order.
+            # Largest list in 'group' determines covariate order in latex output.
+            largest_list_group = max(list(regression_map[group].values()), key=lambda ls: len(ls))
+            cov_order =  largest_list_group + ["const"] #add constant variable.
+            stargazer.covariate_order(cov_order)
+            # Add cov type in notes.
+            stargazer.add_custom_notes([f"Cov. Type:\t{cov_type}"])
+            with (path_results/group/f"stargazer_latex_{cov_type}.txt").open("w") as text_file:
+                text_file.write(stargazer.render_latex(escape=True))
+            with (path_results/group/f"stargazer_{cov_type}.html").open("w") as text_file:
+                text_file.write(stargazer.render_html())
+    
 
 
 def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:

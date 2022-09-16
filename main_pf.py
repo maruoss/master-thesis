@@ -253,18 +253,24 @@ def performance(args):
     print("Perform linear regressions according to the CAPM, 3FF model and 5FF model "
             "to try to explain the monthly long short portfolio returns...")
     regression_map = {
+                    "CAPM": {  #folder in results where the below + stargazer latex will be saved.
                     "CAPM":                 ["Mkt-RF"],
                     "CAPM_MOM":             ["Mkt-RF", "MOM"],
                     "CAPM_MOM_VIX":         ["Mkt-RF", "MOM", "VIX"],
                     "CAPM_MOM_VIX_VVIX":    ["Mkt-RF", "MOM", "VIX", "VVIX"],
+                    },
+                    "3FF": {
                     "3FF":                  ["Mkt-RF", "SMB", "HML"],
                     "3FF_MOM":              ["Mkt-RF", "SMB", "HML", "MOM"],
                     "3FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "MOM", "VIX"],
                     "3FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "MOM", "VIX", "VVIX"],
+                    },
+                    "5FF": {  
                     "5FF":                  ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
                     "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
                     "5FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX"],
                     "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
+                    }
     }
     # Regress the regressions specified in regression_map on long_short portfolio return.
     regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results)
