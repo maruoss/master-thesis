@@ -10,10 +10,9 @@ import matplotlib.pyplot as plt
 from pandas.tseries.offsets import MonthEnd
 import quantstats as qs
 import statsmodels.api as sm
-from portfolio.stargazer import Stargazer
 
+from portfolio.helper_ols import get_save_alphabeta_significance, get_save_mean_significance
 from portfolio.load_files import load_mkt_excess_ret_monthly
-from portfolio.utils import add_signif_stars_df
 
 
 def collect_preds(exp_dir: Path) -> None:
@@ -36,7 +35,8 @@ def collect_preds(exp_dir: Path) -> None:
                     except shutil.SameFileError:
                         print("Source and Destination are the same file...")
                 else:
-                    print(f"File {file.name} already exists in '{preds_dir.name}' folder.")
+                    print(f"File {file.name} already exists in '{preds_dir.name}' folder. "
+                            "Will not touch it.")
 
 
 def concat_and_save_preds(exp_dir: Path) -> pd.DataFrame:
@@ -284,25 +284,18 @@ def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
     return df.loc[df.index[np.isin(df.index, df_target.index)]]
 
 
-def save_performance_statistics(pf_returns: pd.DataFrame, 
-                                exp_path: Path, 
+def save_performance_statistics(pf_returns: pd.DataFrame,
                                 path_data: Path,
                                 path_results_perf: Path
                                 ) -> None:
     """Save performance statistics for the class portfolio returns in pf_returns
     to the 'performance' subfolder in exp_path/'results' """
-    # Plot equity line and save to .png.
+    # Plot equity line and save to .png in 'path_results_perf'.
     print("Plotting equity lines...")
     pf_returns_cumprod = (1. + pf_returns).cumprod()
     pf_returns_cumprod.plot(figsize=(15, 10), alpha=1.0, linewidth=2.5, ylabel="Portfolio Value",
                     title="Cumulative Return of Classification Portfolios")
     plt.tight_layout() # remove whitespace around plot
-    # # Make 'results' subfolder.
-    # path_results = exp_path/"results"
-    # path_results.mkdir(exist_ok=True, parents=False)
-    # # Make 'performance' subfolder in 'results' folder.
-    # path_results_perf = path_results/"performance"
-    # path_results_perf.mkdir(exist_ok=True, parents=False)
     plt.savefig(path_results_perf/"plot.png")
     print("Done.")
 
@@ -310,36 +303,34 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     print("Calculating portfolio performance statistics for portfolio (excess) returns...")
     perfstats = []
     periods = 12 # we have monthly (excess) returns (as rf assumed 0.)
-
     # Convert decimals to percentages of a pandas series.
     def to_pct(x):
         """Transforms decimal to % string"""
         return f'{x:.2%}'
-
     # Cumulative Returns.
     cumr = (pf_returns+1).prod() - 1
-    cumr_str = cumr.apply(to_pct).rename("Cum. Return")
-
+    cumr_str = cumr.apply(to_pct).rename("Cum. Return") #the to_pct funct. returns a string.
+    # Monthly arithmetic mean.
+    mean = pf_returns.mean(axis=0)
+    mean_str = mean.apply(to_pct).rename("Mean (monthly)")
+    # Test significance of Long-Short (arithmetic) monthly mean being different from zero.
+    # Also with HAC robust errors.
+    mean_signif_series = get_save_mean_significance(pf_returns, path_results_perf)
     # Annualized arithmetic mean.
-    mean_ann = pf_returns.mean() * periods
+    mean_ann = mean * periods
     mean_ann_str = mean_ann.apply(to_pct).rename("Mean (ann.)")
-
     # Cagr from qs.stats.cagr is wrong (subtracts 1 from lenght of total months, bc it assumes its days)
     cagr = (pf_returns+1).prod() ** (periods/len(pf_returns)) - 1
     cagr_str = cagr.apply(to_pct).rename("CAGR")
-
     # Annualized volatility.
     vol_ann = pf_returns.std(ddof=1) * np.sqrt(periods)
     vol_ann_str = vol_ann.apply(to_pct).rename("Volatility (ann.)")
-
     # Annualized Sharpe Ratio.
     sharpe_ann = mean_ann / vol_ann
     sharpe_ann_str = sharpe_ann.apply(lambda x: f'{x: .3f}').rename("Sharpe Ratio (ann.)")
-
     # Geometric annualized Sharpe Ratio
     sharpe_ann_geom = cagr / vol_ann
     sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. Sharpe Ratio (ann.)")
-
     # Calculate alpha and beta w.r.t. FF Excess Market return.
     print("Load the Market Excess return from the 5 Fama French Factors Dataset...")
     # Skip first two rows (text description) and omit yearly data (after row 706).
@@ -347,18 +338,24 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Filter months (rows) to align with pf_returns.
     mkt_excess_ret_monthly = filter_idx(mkt_excess_ret_monthly, pf_returns)
     print("Done.")
-
-    # Perform linear regression (no HAC adjustment). Should yield same as OLS 
-    # Standard later (but here annualized).
+    # Perform linear regression (no HAC adjustment) (alpha then annualized).
     # Convert DataFrame to Series, so that X has correct shape.
     mkt_excess_ret_monthly = mkt_excess_ret_monthly.squeeze()
-    X = np.array([np.ones_like(mkt_excess_ret_monthly), mkt_excess_ret_monthly]).T #bring to shape [1, mkt_excess_ret]
+    # Create X as [[1., 1., ..., 1.].T, [mkt_excess_ret].T] (with intercept).
+    X = np.array([np.ones_like(mkt_excess_ret_monthly), mkt_excess_ret_monthly]).T
     alphabetas = np.linalg.inv(X.T@X)@X.T@pf_returns #regress pf_returns (y) on [1, mkt_excess_ret] (X)
     alphas = alphabetas.iloc[0, :] * periods #annualized alpha
     betas = alphabetas.iloc[1, :]
     alphas_str = alphas.apply(lambda x: f'{x: .3f}').rename("Alpha (ann.)")
     betas_str = betas.apply(lambda x: f'{x: .3f}').rename("Beta")
-
+    # Test significance of Alpha betas and save detailed ols results.
+    # Also with HAC robust errors.
+    alphabeta_signif_df = get_save_alphabeta_significance(pf_returns,
+                                                        X, 
+                                                        path_results_perf, 
+                                                        alphas/12, #check alphas from the "manual" calc.
+                                                        betas #check beta from the "manual" calc.
+                                                        )
     # Max Drawdown.
     pf_returns_dd = pf_returns.copy()
     # Insert [0, 0, ..., 0] as first prices, to calculate MaxDD correctly.
@@ -367,7 +364,6 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     prices = (1 + pf_returns_dd).cumprod()
     maxdd = (prices / prices.expanding().max()).min() - 1 #formula from quantstats
     maxdd_str = maxdd.apply(to_pct).rename("Max Drawdown")
-
     #Max Drawdown Days.
     maxdd_days = []
     for columname in pf_returns_dd.columns:
@@ -377,27 +373,22 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
         qs_dd = col_summary["max drawdown"].iloc[0] / 100
         assert (qs_dd - maxdd[columname]) < 0.0001, (f"Max Drawdown of column {columname}: {qs_dd} calculated by quantstats"
         f"is not equal our manually calculated Max. DD {maxdd[columname]}")
-
         maxdd_days.append(col_summary["days"].iloc[0])
     maxdd_days = pd.Series(maxdd_days, index=pf_returns_dd.columns, name="Max DD days")
     maxdd_days_str = maxdd_days.apply(lambda x: f'{x: .0f}')
-
     # Calmar Ratio.
     calmar = cagr / maxdd.abs()
     calmar_str = calmar.apply(lambda x: f'{x: .3f}').rename("Calmar Ratio")
-
     # Skewness/ Kurtosis.
     skew = pf_returns.skew()
     skew_str = skew.apply(lambda x: f'{x: .3f}').rename("Skewness")
     kurt = pf_returns.kurtosis()
     kurt_str = kurt.apply(lambda x: f'{x: .3f}').rename("Kurtosis")
-
     # Collect perfstats "strings" (better for saving/ formatting?).
-    perfstats += [cumr_str, cagr_str, mean_ann_str, vol_ann_str, sharpe_ann_str, 
+    perfstats += [cumr_str, cagr_str, mean_str, mean_signif_series, mean_ann_str, vol_ann_str, sharpe_ann_str, 
                 sharpe_ann_geom_str, maxdd_str, maxdd_days_str, calmar_str, skew_str, 
-                kurt_str, alphas_str, betas_str
+                kurt_str, alphas_str, betas_str, alphabeta_signif_df
                 ]
-
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.
     perfstats = pd.concat(perfstats, axis=1)
@@ -406,123 +397,3 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     export_dfi(perfstats, str(path_results_perf/"perfstats.png"))
     # Export perfstats dataframe to LaTeX code.
     export_latex(perfstats, path_results_perf/"perf_latex.txt" )
-
-
-def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Series, path_results: Path) -> None:
-    """Performs each relevant regression from the 'regression_map' dictionary and 
-    saves results as .txt (latex) and .csv files. in an accordingly named folder
-    in 'path_results'. 
-
-        Args:
-            factors:        All independent variables concatenated in a Dataframe.
-            y:              The dependent variable (long short monthly portfolio returns here).
-            path_results:   The path where the results folder resides.
-    
-    """
-    # Save every single regression in its own folder.
-    collect_group = {}
-    for group in regression_map.keys():
-        group_map = regression_map[group]
-        for regr_key in group_map.keys():
-            parent_path = path_results/group/regr_key
-            parent_path.mkdir(exist_ok=True, parents=True) #create group parent folder if it doesnt exist.
-            X = factors_avail.loc[:, group_map[regr_key]]
-            # Add constant for intercept.
-            X = sm.add_constant(X)
-
-            # 1a. Regression. No HAC Standard Errors.
-            ols = sm.OLS(y, X) #long_short_return regressed on X.
-            ols_result = ols.fit()
-            fileprefix = "Standard"
-            save_ols_results(ols_result, parent_path, fileprefix)
-            # Append to dict for stargazer summary.
-            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
-
-            # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
-            max_lags = int(len(X)**(1/4))
-            ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
-            fileprefix = f"HAC_{max_lags}"
-            save_ols_results(ols_result, parent_path, fileprefix)
-            # Append to dict for stargazer summary.
-            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
-
-            # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
-            ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
-            fileprefix = "HAC_12"
-            save_ols_results(ols_result, parent_path, fileprefix)
-            # Append to dict for stargazer summary.
-            collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
-    
-    # Save results in stargazer format (group regressions side-by-side).
-    for group in collect_group.keys():
-        for cov_type in collect_group[group].keys():
-            stargazer = Stargazer(collect_group[group][cov_type])
-            # Model names.
-            model_names = sorted(list(regression_map[group].keys()))
-            stargazer.custom_columns(model_names, [1]*len(model_names))
-            # Covariate order.
-            # Largest list in 'group' determines covariate order in latex output.
-            largest_list_group = max(list(regression_map[group].values()), key=lambda ls: len(ls))
-            cov_order =  largest_list_group + ["const"] #add constant variable.
-            stargazer.covariate_order(cov_order)
-            # Add cov type in notes.
-            stargazer.add_custom_notes([f"Cov. Type:\t{cov_type}"])
-            with (path_results/group/f"stargazer_latex_{cov_type}.txt").open("w") as text_file:
-                text_file.write(stargazer.render_latex(escape=True))
-            with (path_results/group/f"stargazer_{cov_type}.html").open("w") as text_file:
-                text_file.write(stargazer.render_html())
-    
-
-
-def save_ols_results(ols_result, parent_path: Path, fileprefix: str) -> None:
-    """Saves results from statsmodels.OLS to .txt and .csv files in a separate 
-    folder in the 'parent_path' path.
-
-        Args:
-            ols_result:             Object from ols.fit().summary()
-            ols_result2:            Object from ols.fit().summary2()
-            parent_path (Path):     Path to the results folder.
-            fileprefix (str):       Prefix name of the file.
-    
-    """
-    # 3 LaTeX files.
-    # with (parent_path/f"{fileprefix}_result_latex1.txt").open("w") as text_file:
-    #     text_file.write("OLS Summary (For Loop):\n\n")
-    #     for table in ols_result.summary(alpha=0.05).tables:
-    #         text_file.write(table.as_latex_tabular())
-    # NOTE: summary() doesnt work with adding significance stars + layout is not as nice.
-    with (parent_path/f"{fileprefix}_latex.txt").open("w") as text_file:        
-        text_file.write("OLS Summary2 as LaTeX:\n\n")
-        summary2 = ols_result.summary2(alpha=0.05)
-        summary2.tables[1] = add_signif_stars_df(summary2.tables[1])
-        summary2.tables[0] = replace_scale_with_cov_type(summary2.tables[0], 
-                                                        fileprefix)
-        text_file.write(summary2.as_latex())
-        text_file.write("\n\n\nOLS Summary as LaTeX:\n\n")
-        text_file.write(ols_result.summary(alpha=0.05).as_latex())
-    # .txt file.
-    with (parent_path/f"{fileprefix}.txt").open("w") as text_file:
-        text_file.write(summary2.as_text())
-    # 1 .csv file.
-    with (parent_path/f"{fileprefix}_summary1.csv").open("w") as text_file:
-        text_file.write(ols_result.summary(alpha=0.05).as_csv())
-    # 2. .csv file
-    with (parent_path/f"{fileprefix}_summary2.csv").open("w") as text_file:
-        for idx, df in enumerate(summary2.tables):
-            # Only print rows and cols for table1, where they are annotated.
-            if idx==1: 
-                df.to_csv(text_file, line_terminator="\n")
-            else:
-                df.to_csv(text_file, line_terminator="\n", index=False, header=False)
-            # text_file.write("\n")
-
-
-
-def replace_scale_with_cov_type(ols_summary2_table0: pd.DataFrame, 
-                                cov_type: str
-                                ) -> pd.DataFrame:
-    """Summary2 does not have the cov type by default in its tables. Here we replace
-    the 'Scale' statistic at location (6, 2) and (6, 3) with the covariance type."""
-    ols_summary2_table0.iloc[6, 2] = "Cov. Type"
-    ols_summary2_table0.iloc[6, 3] = cov_type
-    return ols_summary2_table0

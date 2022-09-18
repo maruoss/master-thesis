@@ -8,8 +8,7 @@ from pandas.api.types import is_numeric_dtype
 
 from datamodule import DataModule
 from model.neuralnetwork import FFN
-from portfolio.helper import check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
-from portfolio.utils import add_signif_stars_df
+from portfolio.helper_perf import check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
 
 
@@ -50,37 +49,7 @@ def get_yearidx_bestmodelpaths(exp_path: Path) -> list:
     return idx_bestmodelpaths
 
 
-def regress_on_constant(y: pd.Series) -> dict:
-    """Regress y on a constant -> Test the signficance of the mean being
-    different from 0. Perform OLS with standard and two HAC Standard errors.
-    Additionally, add significance stars to the statsmodels summary2 output."""
-    # Create X, just 1's for the intercept.
-    X = np.ones_like(y)
-    
-    ols_results = {}
-    # # 1a. Regression. No HAC Standard Errors.
-    ols = sm.OLS(y, X) #long_short_return regressed on X.
-    result_fit = ols.fit()
-    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
-    table1 = add_signif_stars_df(table1)
-    ols_results["Standard"] = table1
-
-    # # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
-    max_lags = int(len(X)**(1/4))
-    result_fit = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
-    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
-    table1 = add_signif_stars_df(table1)
-    ols_results[f"HAC_{max_lags}"] = table1
-
-    # # 1c. Regression. With HAC Standard Errors. Lag after Bali (2021) = 12.
-    result_fit = ols.fit(cov_type="HAC", cov_kwds={"maxlags": 12}, use_t=True)
-    table1 = result_fit.summary2(alpha=0.05).tables[1] #df
-    table1 = add_signif_stars_df(table1)
-    ols_results["HAC_12"] = table1
-    return ols_results
-
-
-def check_y(y: np.array, orig_feature_target: pd.DataFrame, label_fn: str) -> None:
+def check_y_classification(y: np.array, orig_feature_target: pd.DataFrame, label_fn: str) -> None:
     """Checks whether y_data corresponds to y_orig, where y_orig is calculated from
     the classified 'option_ret' column in the original feature target dataframe."""
     y_orig = orig_feature_target["option_ret"] # pd.Series
@@ -230,30 +199,6 @@ def pred_on_data(
         # y_true (of the whole data available, not only test dates).
         y_new = dm.y.numpy()
         return preds_argmax_df, y_new
-
-
-# def add_significance_key(results: dict) -> dict:
-#     features = list(results.keys())
-#     measures = list(results[features[0]].keys()) #Assumes all feature have the same keys.
-#     for feature in features:
-#         for measure in measures:
-#             # Measures have dynamic HAC_{max_lags} standard error correction.
-#             se_methods = [key for key in results[feature][measure].keys() if key != "Mean"]
-#             for se in se_methods:
-#                 significance = ""
-#                 #pf_ret_meanofmean doesnt have "const" -> catch exception.
-#                 try:
-#                     p_value = results[feature][measure][se]["P>|t|"]["const"]
-#                 except TypeError:
-#                     p_value = results[feature][measure][se]["P>|t|"]
-#                 if p_value <= 0.1 and p_value > 0.05:
-#                     significance = "*"
-#                 elif p_value <= 0.05 and p_value > 0.01:
-#                     significance = "**"
-#                 elif p_value <= 0.01:
-#                     significance = "***"
-#                 results[feature][measure][se]["Significance"] = significance
-#     return results
 
 
 def mean_str(col):

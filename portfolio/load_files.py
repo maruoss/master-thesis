@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def load_pfret_from_pfs(path_portfolios: Path) -> pd.DataFrame:
-    """Load the 'option_ret' column of each (class and long-short) portfolio saved 
+    """Load the 'option_ret' column of each (class or long-short) portfolio saved 
     in the 'path_portfolios' folder and concatenate to a dataframe.
         
         Args:

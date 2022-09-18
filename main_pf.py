@@ -11,8 +11,9 @@ from tqdm import tqdm
 from sklearn.metrics import balanced_accuracy_score
 from data.utils.convert_check import small_med_big_eq
 from datamodule import load_data
-from portfolio.helper import check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, regress_factors, save_performance_statistics, various_tests, weighted_means_by_column
-from portfolio.helper_featureimp import aggregate_newpred, check_y, get_yearidx_bestmodelpaths, mean_str_add_stars, pred_on_data, regress_on_constant
+from portfolio.helper_ols import regress_factors, regress_on_constant
+from portfolio.helper_perf import check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, save_performance_statistics, various_tests, weighted_means_by_column
+from portfolio.helper_featureimp import aggregate_newpred, check_y_classification, get_yearidx_bestmodelpaths, mean_str_add_stars, pred_on_data
 
 
 from portfolio.load_files import load_ff_monthly, load_mom_monthly, load_pfret_from_pfs, load_rf_monthly, load_vix_monthly, load_vvix_monthly
@@ -212,7 +213,7 @@ def performance(args):
 
     # Save performance statistics in the 'performance' subfolder in exp_dir/'results'.
     print("Saving performance statistics...")
-    save_performance_statistics(pf_returns, exp_path, path_data, path_results_perf)
+    save_performance_statistics(pf_returns, path_data, path_results_perf)
     print("Done.")
 
     # ****** Regressions ******
@@ -273,6 +274,7 @@ def performance(args):
                     }
     }
     # Regress the regressions specified in regression_map on long_short portfolio return.
+    # The regression groups get summarized via the stargazer package.
     regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results)
     print("Done.")
     print("All done!")
@@ -471,7 +473,7 @@ def loop_years(
         preds_new_list.append(preds_new_year)
     # Check true y vectors from different sources. Takes 'y_new' from the last 
     # for loop iteration -> should be the whole y of the data.
-    check_y(y, orig_feature_target, args_exp.label_fn)
+    check_y_classification(y, orig_feature_target, args_exp.label_fn)
     preds_new = pd.concat(preds_new_list).reset_index() #shape [index, [index, pred]]
     # Rename "index" to "id". (The checks look for a column 'id' since the 
     # original predictions first column is also named 'id'. # CRUCIAL for aggregate function later.
