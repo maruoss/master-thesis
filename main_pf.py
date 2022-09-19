@@ -300,7 +300,7 @@ def feature_importance(args):
     preds_orig = pd.read_csv(exp_path/"all_pred.csv", index_col=0) #shape [index, cols: ["id", "pred"]]
     # Get (year_idx, best_model_path) for each year into a list.
     # Note: year_idx starts at 0.
-    yearidx_bestmodelpaths = get_yearidx_bestmodelpaths(exp_path)
+    yearidx_bestmodelpaths = get_yearidx_bestmodelpaths(exp_path, args_exp.model)
     # Data path.
     path_data = Path.cwd()/"data"
     # Load original feature_target dataframe to permute.

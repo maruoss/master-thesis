@@ -12,20 +12,23 @@ from portfolio.helper_perf import check_eoy, get_and_check_min_max_pred, get_cla
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
 
 
-def get_yearidx_bestmodelpaths(exp_path: Path) -> list:
+def get_yearidx_bestmodelpaths(exp_path: Path, model_name: str) -> list:
     """Search exp_path for 'best_ckpt????' files and save their paths into a list.
-    Then sort the path and enumerate it to get a list of tuples (idx, best_ckpt_path).
+    Then sort the path and enumerate it to get a list of tuples (idx, best_ckpt_path)
+    for each folder (year) found.
 
         Returns:
             idx_bestmodelpaths (list): Enumerated best checkpoint paths in the
                                         experiment path.
     """
+    #Get pattern for filename (Unix shell-style wildcards)
+    pattern = get_filename_bestmodel(model_name) 
     best_ckpt_paths = []
     for directory in exp_path.iterdir():
         if directory.is_dir() and directory.name != "predictions" and directory.name != "portfolios":
             # See https://docs.python.org/3/library/fnmatch.html#module-fnmatch
             # for filename pattern matching below.
-            for file in directory.glob("best_ckpt????"):
+            for file in directory.glob(pattern):
                 # If files do not exist in 'predictions' folder yet
                 best_ckpt_paths.append(file.resolve())
     # IMPORTANT: Sort best ckpt paths that were read in, in ascending order.
@@ -47,6 +50,17 @@ def get_yearidx_bestmodelpaths(exp_path: Path) -> list:
                 "are missing (not in close succession, eg. 2006->2007->2008, etc.")
             prev_year = year
     return idx_bestmodelpaths
+
+
+def get_filename_bestmodel(model_name: str) -> str:
+    """Since the linear, svm and rf model do not save checkpoints they are not 
+    called 'best_ckpt{year}' but best_est{year}. ???? are Unix shell-style 
+    wildcards, "which are not the same as regular expressions"
+    Source: https://docs.python.org/3/library/fnmatch.html#module-fnmatch. """
+    if model_name in ["lin", "svm", "rf"]:
+        return "best_est????"
+    else:
+        return "best_ckpt????"
 
 
 def check_y_classification(y: np.array, orig_feature_target: pd.DataFrame, label_fn: str) -> None:
@@ -199,6 +213,8 @@ def pred_on_data(
         # y_true (of the whole data available, not only test dates).
         y_new = dm.y.numpy()
         return preds_argmax_df, y_new
+    else:
+        raise NotImplementedError(f"Model name: '{model_name}' is not implemented yet.")
 
 
 def mean_str(col):

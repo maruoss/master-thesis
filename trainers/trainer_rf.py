@@ -1,27 +1,19 @@
 import json
 from pathlib import Path
-import pdb
-from shutil import rmtree
-from joblib import Memory
-import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from tensorboard import summary
-from tune_sklearn import TuneGridSearchCV, TuneSearchCV
+from tune_sklearn import TuneSearchCV
 from datamodule import Dataset
-from sklearn.utils.class_weight import compute_class_weight
-from utils.helper import get_best_score, set_tune_log_dir
+from utils.helper import del_files_with_large_disksize, get_best_score, set_tune_log_dir
 from sklearn.decomposition import PCA
-from sklearn.kernel_approximation import Nystroem
 from ray import tune
 from ray.tune.schedulers import ASHAScheduler
 from joblib import dump, load
 
-from utils.logger import serialize_args, serialize_config
+from utils.logger import serialize_config
 
 import time as t
 
@@ -91,11 +83,11 @@ def rf_run(args, year_idx, time, ckpt_path, config):
     if not args.no_predict:
         # Save tunesearch object for later prediction anaylsis.
         test_year_end = val_year_end + args.test_length
-        dump(tune_search.best_estimator_, loop_path/f"ts{test_year_end}.joblib")
+        dump(tune_search.best_estimator_, loop_path/f"best_est{test_year_end}")
         # Automatically predicts with best (refitted) estimator of GridSearchCV
         preds = tune_search.predict(data.X_test)
         # Check if correct model is saved:
-        test_preds = load(loop_path/f"ts{test_year_end}.joblib").predict(data.X_test)
+        test_preds = load(loop_path/f"best_est{test_year_end}").predict(data.X_test)
         if (preds == test_preds).all():
             print(f"Predictions {test_year_end} from saved and current model are the same.")
         else:
@@ -104,6 +96,9 @@ def rf_run(args, year_idx, time, ckpt_path, config):
         # Prediction directory path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_df.to_csv(save_to_dir, index_label="id")
+        print("Delete large unneeded files to save disk space...")
+        del_files_with_large_disksize(loop_path)
+        print("Done!")
 
     # memory.clear(warn=False)
     # rmtree("cachedir")

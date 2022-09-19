@@ -1,8 +1,5 @@
 from pathlib import Path
-import pdb
 from datetime import datetime
-from re import I
-import numpy as np
 import pandas as pd
 
 from pytorch_lightning import seed_everything
@@ -89,7 +86,7 @@ def add_stress_test_param(args):
     it_keys = ["max_epochs", "max_iters", "n_estimators", "check_val_every", "num_boost_round"]
     for i in it_keys:
         if i in d.keys():
-            d[i] = 1 # change to 10 epochs
+            d[i] = 10 # change to 10 epochs
     d["num_samples"] = 1 #to test parallelism.
     d["gpus_per_trial"] = 1 #to use full gpu.
 

@@ -98,3 +98,19 @@ def del_ckpts(loop_dir: Path) -> None:
         else:
             if file.name == "checkpoint":
                 file.unlink()
+
+
+def del_files_with_large_disksize(loop_dir: Path) -> None:
+    """For models that are trained with ray tune gridsearch. Delete all 
+    'params.pkl' in estimator subfolders. Delete 'experiment_state' file as well. 
+    All files use quite a large disk space.
+    """
+    for file in loop_dir.iterdir():
+        if file.is_dir():
+            for f in file.iterdir():
+                if f.name == "params.pkl":
+                    f.unlink()
+        else: 
+            if (file.name.startswith("experiment_state") or 
+                file.name.startswith("basic-variant-state")):
+                file.unlink()
