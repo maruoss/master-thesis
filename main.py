@@ -76,7 +76,7 @@ def looper(args):
     print(f"Finished. Completed in {(end_time - start_time).total_seconds()} seconds.")
 
 def add_stress_test_param(args):
-    """Stress test model with args that give largest dataset."""
+    """Overwrite args (Namespace) with the below parameter update."""
     # Get args as a dictionary.
     d = vars(args)
     # We want maximum data size. Can edit args via dictionary.
@@ -122,7 +122,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--tag", type=str, default="")
     cockpit.add_argument("--seed", type=int, default=42)
     cockpit.add_argument("--path_data", type=str, default=cwd/"data")
-    cockpit.add_argument("--dataset", type=str, default="small",
+    cockpit.add_argument("--dataset", type=str, default="medium",
                             choices=["small", "medium", "big"])
     cockpit.add_argument("--init_train_length", type=int, default=10)
     cockpit.add_argument("--val_length", type=int, default=2)

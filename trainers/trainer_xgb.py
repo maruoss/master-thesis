@@ -1,8 +1,5 @@
 import json
-import os
 from pathlib import Path
-import pdb
-from tkinter import W
 import numpy as np
 import pandas as pd
 from sklearn.metrics import balanced_accuracy_score
@@ -11,8 +8,7 @@ from ray.tune.schedulers import ASHAScheduler
 from ray.tune import CLIReporter
 from ray import tune
 from ray.tune.integration.xgboost import TuneReportCheckpointCallback
-import pytorch_lightning as pl #for "seed everything"
-from typing import Tuple, Dict, List
+from typing import Tuple
 import shutil
 
 from datamodule import Dataset
@@ -161,10 +157,9 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
                         "cpu": args.gpus_per_trial * 8,
                         "gpu": args.gpus_per_trial
                         }
-    
     val_year_end, loop_path, exp_path = \
         set_tune_log_dir(args, year_idx, time, search_space)
-
+    
     analysis = tune.run(
         train_fn_with_parameters,
         local_dir=exp_path,
@@ -181,10 +176,8 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         keep_checkpoints_num=1, # only keep best checkpoint
         checkpoint_score_attr="min-val_logloss", #TuneReportChkptCallback redefined names
     )
-
-    
     print("Best hyperparameters found were: ", analysis.best_config)
-    
+
     #change "last" to "all" for global min
     best_last_trial = analysis.get_best_trial("val_logloss", "min", "last")
     print("Best trial among last epoch config: {}".format(best_last_trial.config))
@@ -255,6 +248,5 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         # Prediction path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
         preds_argmax_df.to_csv(save_to_dir, index_label="id")
-
 
     return best_result, exp_path, ckpt_path, config
