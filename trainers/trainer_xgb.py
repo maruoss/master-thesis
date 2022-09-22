@@ -239,10 +239,11 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
         X_test, y_test = data.get_test()
         D_test = xgb.DMatrix(X_test, label=y_test)
         # Predict.
-        preds = best_bst.predict(D_test) #returns np.array with class probabilities
         # Binary problem outputs probabilites, multiclass outputs argmax already.
+        preds = best_bst.predict(D_test) #returns np.array
         if data.num_classes == 2:
             preds = np.round(preds) # if 2 classes, round the probabilities
+        preds = preds.astype(int) #convert classes from floats to ints.
         # preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
         preds_argmax_df = pd.DataFrame(preds, columns=["pred"])
         # Prediction path.

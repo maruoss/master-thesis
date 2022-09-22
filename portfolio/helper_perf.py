@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from pandas.tseries.offsets import MonthEnd
 import quantstats as qs
 import statsmodels.api as sm
+from pandas.api.types import is_integer_dtype 
 
 from portfolio.helper_ols import get_save_alphabeta_significance, get_save_mean_significance
 from portfolio.load_files import load_mkt_excess_ret_monthly
@@ -60,6 +61,9 @@ def concat_and_save_preds(exp_dir: Path) -> pd.DataFrame:
             assert year == prev_year + 1, "ERROR: year is not succeeding previous year"
             prev_year = year
         pred_df = pd.read_csv(file)
+        if not is_integer_dtype(pred_df["pred"]): #if classes are still floats (xgb case, fixed now.)
+            print("Predictions are not integers, convert to int...")
+            pred_df["pred"] = pred_df["pred"].astype(int)
         preds.append(pred_df)
     # Return concatenated dataframe.
     preds_concat_df = pd.concat(preds).reset_index(drop=True)
@@ -286,7 +290,8 @@ def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
 
 def save_performance_statistics(pf_returns: pd.DataFrame,
                                 path_data: Path,
-                                path_results_perf: Path
+                                path_results_perf: Path,
+                                model_name: str, #for txt, png file names.
                                 ) -> None:
     """Save performance statistics for the class portfolio returns in pf_returns
     to the 'performance' subfolder in exp_path/'results' """
@@ -296,7 +301,7 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     pf_returns_cumprod.plot(figsize=(15, 10), alpha=1.0, linewidth=2.5, ylabel="Portfolio Value",
                     title="Cumulative Return of Classification Portfolios")
     plt.tight_layout() # remove whitespace around plot
-    plt.savefig(path_results_perf/"plot.png")
+    plt.savefig(path_results_perf/f"plot_{model_name}.png")
     print("Done.")
 
     # Collect performance statistics for EXCESS RETURNS (but cancels for long short portfolio).
@@ -392,8 +397,8 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.
     perfstats = pd.concat(perfstats, axis=1)
-    perfstats.to_csv(path_results_perf/"perfstats.csv")
+    perfstats.to_csv(path_results_perf/f"perfstats_{model_name}.csv")
     # dfi only accepts strings as paths.
-    export_dfi(perfstats, str(path_results_perf/"perfstats.png"))
+    export_dfi(perfstats, str(path_results_perf/f"perfstats_{model_name}.png"))
     # Export perfstats dataframe to LaTeX code.
-    export_latex(perfstats, path_results_perf/"perf_latex.txt" )
+    export_latex(perfstats, path_results_perf/f"perf_latex_{model_name}.txt")

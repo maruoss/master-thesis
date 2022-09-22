@@ -13,7 +13,17 @@ from data.utils.convert_check import small_med_big_eq
 from datamodule import load_data
 from portfolio.helper_ols import regress_factors, regress_on_constant
 from portfolio.helper_perf import check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, save_performance_statistics, various_tests, weighted_means_by_column
-from portfolio.helper_featureimp import aggregate_newpred, check_y_classification, get_yearidx_bestmodelpaths, mean_str_add_stars, pred_on_data
+from portfolio.helper_featureimp import (aggregate_newpred, 
+                                        check_y_classification, 
+                                        get_mean_ols_diff, 
+                                        get_yearidx_bestmodelpaths, 
+                                        mean_str_add_stars, 
+                                        pred_on_data, 
+                                        prepare_to_save, 
+                                        sanity_check_balacc_means, 
+                                        sanity_check_ls_means, 
+                                        sanity_check_mom_ls_means
+                                        )
 
 
 from portfolio.load_files import load_ff_monthly, load_mom_monthly, load_pfret_from_pfs, load_rf_monthly, load_vix_monthly, load_vvix_monthly
@@ -29,7 +39,10 @@ def aggregate(args):
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
     matches_list = list(matches)
-    assert len(matches_list) == 1, "there exists none or more than 1 folder with given expid!"
+    if not len(matches_list) == 1:
+        raise ValueError(f"There exists none or more than 1 folder with "
+                            f"experiment id {args.expid} in the {logs_folder.name} "
+                            "directory!")
     exp_dir = matches_list[0]
     # Move all predictions to 'predictions' folder with the expdir folder.
     print("Find all 'predictions{year}' files in the subfolders of the experiment "
@@ -178,7 +191,10 @@ def performance(args):
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
     matches_list = list(matches)
-    assert len(matches_list) == 1, "there exists more than 1 folder with given expid!"
+    if not len(matches_list) == 1:
+        raise ValueError(f"There exists none or more than 1 folder with "
+                            f"experiment id {args.expid} in the {logs_folder.name} "
+                            "directory!")
     exp_path = matches_list[0]
 
     # Read aggregated portfolios. RETURNS are from 02/1996 to 11/2021. Because
@@ -212,8 +228,10 @@ def performance(args):
     path_results_perf.mkdir(exist_ok=True, parents=False)
 
     # Save performance statistics in the 'performance' subfolder in exp_dir/'results'.
+    # Get experiment args to get modelname for naming files...
+    args_exp = pd.read_json(exp_path/"args.json", typ="series")
     print("Saving performance statistics...")
-    save_performance_statistics(pf_returns, path_data, path_results_perf)
+    save_performance_statistics(pf_returns, path_data, path_results_perf, args_exp.model)
     print("Done.")
 
     # ****** Regressions ******
@@ -292,7 +310,10 @@ def feature_importance(args):
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
     matches_list = list(matches)
-    assert len(matches_list) == 1, "there exists none or more than 1 folder with given expid!"
+    if not len(matches_list) == 1:
+        raise ValueError(f"There exists none or more than 1 folder with "
+                            f"experiment id {args.expid} in the {logs_folder.name} "
+                            "directory!")
     exp_path = matches_list[0]
     # Get experiment args.
     args_exp = pd.read_json(exp_path/"args.json", typ="series")
@@ -340,36 +361,24 @@ def feature_importance(args):
                          )
 
     # Sort results descending, once for balacc and once for meanofmean difference monthly pf returns.
-    results_sorted_balacc = dict(sorted(results.items(), key= lambda item: item[1]["balacc_meandiff"]["MeanDiff"], reverse=True))
-    results_sorted_meanofmeandiffpf = dict(sorted(results.items(), key= lambda item: item[1]["pfret_momdiff"]["MomDiff"], reverse=True))
+    results_sorted_balacc = dict(sorted(results.items(), key= lambda item: item[1]["balacc"]["MeanDiffOrigPerm"], reverse=True))
+    results_sorted_meanofmeandiffpf = dict(sorted(results.items(), key= lambda item: item[1]["pfret"]["MomDiff"], reverse=True))
 
-    # # Add significance key to each OLS result dictionary.
-    # results_sorted_balacc = add_significance_key(results_sorted_balacc)
-    # results_sorted_meanofmeandiffpf = add_significance_key(results_sorted_meanofmeandiffpf)
+    # Nested dict to DataFrame, full ols results.
+    results_sorted_balacc_df = prepare_to_save(results_sorted_balacc, only_signif=False)
+    results_sorted_meanofmeandiffpf_df = prepare_to_save(results_sorted_meanofmeandiffpf, only_signif=False)
 
-    # Prepare to save.
-    def prepare_to_save(results: dict) -> pd.DataFrame:
-        features = list(results.keys())
-        measures = list(results[features[0]].keys())
-        feature_collect = []
-        for feature in features:
-            measure_collect = []
-            for measure in measures:
-                measure_collect.append(pd.json_normalize(results[feature][measure]))
-            measure_collect = pd.concat(measure_collect, keys=measures, axis=1)
-            feature_collect.append(measure_collect)
-        feature_collect = pd.concat(feature_collect, axis=0)
-        feature_collect.index = features #set rows to be the feature names.
-        return feature_collect
+    # Nested dict to DataFrame, only significance.
+    results_sorted_balacc_df_onlysignif = prepare_to_save(results_sorted_balacc, only_signif=True)
+    results_sorted_meanofmeandiffpf_df_onlysignif = prepare_to_save(results_sorted_meanofmeandiffpf, only_signif=True)
 
-    results_sorted_balacc_df = prepare_to_save(results_sorted_balacc)
-    results_sorted_meanofmeandiffpf_df = prepare_to_save(results_sorted_meanofmeandiffpf)
-
-    #Save sorted results.
+    #Save sorted results (once only significance, once with full ols results).
     path_importance = exp_path/"results"/"importance"
     path_importance.mkdir(exist_ok=True, parents=False)
-    results_sorted_balacc_df.to_csv(path_importance/"balaccmeandiff_sorted.csv")
-    results_sorted_meanofmeandiffpf_df.to_csv(path_importance/"meanofmeandiffpf_sorted.csv")
+    results_sorted_balacc_df.to_csv(path_importance/"balaccmeandiff_sorted_details.csv")
+    results_sorted_balacc_df_onlysignif.to_csv(path_importance/"balaccmeandiff_sorted.csv")
+    results_sorted_meanofmeandiffpf_df.to_csv(path_importance/"meanofmeandiffpf_sorted_details.csv")
+    results_sorted_meanofmeandiffpf_df_onlysignif.to_csv(path_importance/"meanofmeandiffpf_sorted.csv")
 
     end_time = time.time()
     print("Finished. Feature importance completed in", end_time - start_time, "seconds.")
@@ -396,10 +405,13 @@ def loop_features(
                                 args_exp=args_exp,
                                 long_short_pf_ret_orig=long_short_pf_ret_orig,
                                 )
-            # Add to collection dict.
+            # Add to collection dict. Index must coincide with entry in list...
             bal_acc_scores.setdefault("Orig", []).append(result["diff_bal_acc_score"][0])
-            bal_acc_scores.setdefault("New", []).append(result["diff_bal_acc_score"][1])
-            bal_acc_scores.setdefault("Diff", []).append(result["diff_bal_acc_score"][2])
+            bal_acc_scores.setdefault("Perm", []).append(result["diff_bal_acc_score"][1])
+            bal_acc_scores.setdefault("DiffOrigPerm", []).append(result["diff_bal_acc_score"][2])
+            bal_acc_scores.setdefault("Dummy", []).append(result["diff_bal_acc_score"][3])
+            bal_acc_scores.setdefault("DiffOrigDummy", []).append(result["diff_bal_acc_score"][4])
+            bal_acc_scores.setdefault("DiffPermDummy", []).append(result["diff_bal_acc_score"][5])
 
             # Add to collection dict.
             ls_ret_avg_ols.setdefault("MeanOrig", []).append(result["diff_long_short_ret"][0])
@@ -408,44 +420,37 @@ def loop_features(
             for key in result["diff_long_short_ret"][3]:
                 ls_ret_avg_ols.setdefault(key, []).append(result["diff_long_short_ret"][3][key])
             
-        # 1. Regress bal_acc_score means on intercept.
-        diff_bal_acc_scores = bal_acc_scores["Diff"] #Get list from dictionary.
-        diff_bal_acc_ols = regress_on_constant(diff_bal_acc_scores)
-        diff_bal_acc_ols = {key: values.to_dict() for (key, values) 
-                                in diff_bal_acc_ols.items()}
+        # 1. Regress bal_acc_score mean differences on intercept.
         mean_orig = {"MeanOrig": np.mean(bal_acc_scores["Orig"])}
-        mean_new = {"MeanNew": np.mean(bal_acc_scores["New"])}
-        mean_diff = {"MeanDiff": np.mean(diff_bal_acc_scores)}
-        # Edit order of dictionary. Move 'Orig', 'New', 'Diff' to the beginning.
-        mean_bal_acc_ols = {**mean_orig, **mean_new, **mean_diff, **diff_bal_acc_ols}
-        # Is the mean equal (up to small error) to the coefficient of the OLS regression on the intercept?
-        for i in mean_bal_acc_ols.keys():
-            if not i.startswith("Mean"):
-                assert abs(mean_bal_acc_ols[i]["Coef."]["const"] - mean_bal_acc_ols["MeanDiff"]) < 0.0000001, (
-                    f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
-                assert abs(mean_bal_acc_ols["MeanOrig"] - mean_bal_acc_ols["MeanNew"] - mean_bal_acc_ols["MeanDiff"]) < 0.0000001, (
-                    "Mean Orig - Mean New is not equal to the mean difference."
-                )
+        mean_perm = {"MeanPerm": np.mean(bal_acc_scores["Perm"])}
+        mean_dummy = {"MeanDummy": np.mean(bal_acc_scores["Dummy"])}
+        # Get mean of differences, and its ols results in dictionaries.
+        mean_diff_origperm, diff_bal_acc_ols_origperm = get_mean_ols_diff(bal_acc_scores, "DiffOrigPerm")
+        mean_diff_origdummy, diff_bal_acc_ols_origdummy = get_mean_ols_diff(bal_acc_scores, "DiffOrigDummy")
+        mean_diff_permdummy, diff_bal_acc_ols_permdummy = get_mean_ols_diff(bal_acc_scores, "DiffPermDummy")
+        # Edit order of final dictionary. Reorder results.
+        mean_bal_acc_ols = {**mean_orig, **mean_perm, **mean_diff_origperm, **diff_bal_acc_ols_origperm,
+                            **mean_dummy, **mean_diff_origdummy, **diff_bal_acc_ols_origdummy,
+                            **mean_diff_permdummy, **diff_bal_acc_ols_permdummy
+                        } 
+        # Is the mean equal (up to small error) to the * coefficient of the OLS
+        # regression on the intercept?
+        sanity_check_balacc_means(mean_bal_acc_ols)
+        
         # 2. Average OLS results of monthly return differences.
-        #NOTE: Here its a mean of mean differences! (Not as in 1. where its a mean of scalars...)
+        #NOTE: Here its a *mean of mean* differences! (Not as in 1. where its just a *mean* of differences...)
         mom_orig = {"MomOrig": np.mean(ls_ret_avg_ols["MeanOrig"])} #in order to move "Mean" to the beginning.
         mom_new = {"MomNew": np.mean(ls_ret_avg_ols["MeanNew"])} #in order to move "Mean" to the beginning.
         mom_diff = {"MomDiff": np.mean(ls_ret_avg_ols["MeanDiff"])} #in order to move "Mean" to the beginning.
         # Take mean of ols results and create final dict.
         avg_ols = {key: mean_str_add_stars(pd.concat(values)) for (key, values) in ls_ret_avg_ols.items() if not key.startswith("Mean")}
         mom_ls_ret_mean_ols = {**mom_orig, **mom_new, **mom_diff, **avg_ols}
-        # Is the mean of mean equal (up to small error) to the * coefficient of the OLS regression on the intercept?
-        for i in mom_ls_ret_mean_ols.keys():
-            if not i.startswith("Mom"):
-                assert abs(mom_ls_ret_mean_ols[i]["Coef."] - mom_ls_ret_mean_ols["MomDiff"]) < 0.0000001, (
-                    f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
-                assert abs(mom_ls_ret_mean_ols["MomOrig"] - mom_ls_ret_mean_ols["MomNew"] - mom_ls_ret_mean_ols["MomDiff"]) < 0.0000001, (
-                    "Mean of mean (Mom) Orig - Mean of mean (Mom) New is not equal to the mean of mean difference."
-                )
+        # Is the mean of mean equal (up to small error) to the *coefficient of 
+        # the OLS regression on the intercept?
+        sanity_check_mom_ls_means(mom_ls_ret_mean_ols)
         
-        # Collect results for each feature. Short key name for better csv. layout.
-        results[f"{feature}"] = {"balacc_meandiff": mean_bal_acc_ols, "pfret_momdiff": mom_ls_ret_mean_ols}
-
+        # Collect results for each feature. (Short key names for better csv. layout)
+        results[f"{feature}"] = {"balacc": mean_bal_acc_ols, "pfret": mom_ls_ret_mean_ols}
     return results
 
 
@@ -456,7 +461,7 @@ def loop_years(
             preds_orig: pd.DataFrame,
             args_exp: pd.Series,
             long_short_pf_ret_orig: pd.Series,
-            ) -> Dict[float, List[float]]: # (mean of monthly difference, t-value), (difference bal_acc score)
+            ) -> Dict[List[float], List[float]]: # (mean of monthly difference, t-value), (difference bal_acc score)
     
     # Permute feature.
     permuted_feature_target = orig_feature_target.copy()
@@ -466,51 +471,54 @@ def loop_years(
     model_name = args_exp.model #string
 
     # Get predictions on permuted feature data for each year and concatenate.
-    preds_new_list = []
+    preds_perm_list = []
+    preds_dummy_list = []
     for yearidx, bestmodelpath in yearidx_bestmodelpaths: #should be in ascending order.
         print(f"Loading trained model: '{model_name}' to predict on randomized feature from path: {bestmodelpath}")
-        preds_new_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target, args_exp)
-        preds_new_list.append(preds_new_year)
-    # Check true y vectors from different sources. Takes 'y_new' from the last 
+        preds_perm_year, preds_dummy_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target, args_exp)
+        preds_perm_list.append(preds_perm_year)
+        preds_dummy_list.append(preds_dummy_year)
+    # Check true y vectors from different sources. Takes 'y' from the last 
     # for loop iteration -> should be the whole y of the data.
     check_y_classification(y, orig_feature_target, args_exp.label_fn)
-    preds_new = pd.concat(preds_new_list).reset_index() #shape [index, [index, pred]]
+    preds_perm = pd.concat(preds_perm_list).reset_index() #shape [index, [index, pred]]
+    preds_dummy = pd.concat(preds_dummy_list).reset_index() #shape [index, [index, pred]]
     # Rename "index" to "id". (The checks look for a column 'id' since the 
     # original predictions first column is also named 'id'. # CRUCIAL for aggregate function later.
-    preds_new = preds_new.rename(columns={"index": "id"})
+    preds_perm = preds_perm.rename(columns={"index": "id"})
+    preds_dummy = preds_dummy.rename(columns={"index": "id"})
     # Get the relevant y vector corresponding to the test period (the predictions made accordingly).
     y_true = y[-len(preds_orig):] #last y_year is the y of the whole dataset.
     # Check whether length of y_true, preds_orig and preds_new are the same.
-    if not (len(y_true) == len(preds_orig) == len(preds_new)):
+    if not (len(y_true) == len(preds_orig) == len(preds_perm) == len(preds_dummy)):
         raise ValueError("The true y values and the predictions do not coincide in length.")
 
-    # 1. Output: Get difference of test balanced accuracy scores.
-    bal_acc_test_orig = balanced_accuracy_score(y_true, preds_orig["pred"]) 
-    bal_acc_test_new = balanced_accuracy_score(y_true, preds_new["pred"])
-    bal_acc_test_diff = bal_acc_test_orig - bal_acc_test_new # Expected to be positive! More positive -> more important feature.
+    # 1. Output: Get difference of *test* balanced accuracy scores.
+    bal_acc_orig = balanced_accuracy_score(y_true, preds_orig["pred"])
+    bal_acc_dummy = balanced_accuracy_score(y_true, preds_dummy["pred"])
+    bal_acc_diff_orig_dummy = bal_acc_orig - bal_acc_dummy # Expected to be positive (Better than random guessing)...
+    bal_acc_perm = balanced_accuracy_score(y_true, preds_perm["pred"])
+    bal_acc_diff_orig_perm = bal_acc_orig - bal_acc_perm # Expected to be positive! More positive -> more important feature.
+    bal_acc_diff_perm_dummy = bal_acc_perm - bal_acc_dummy # Expected to be positive! Hopefully, still better than random guessing...
 
     # 2. Output: Get mean difference of monthly long-short portfolio returns.
     # Perform aggregation for new predictions.
     option_ret_to_agg = orig_feature_target[["date", "option_ret"]]
-    ls_pf_ret_new = aggregate_newpred(preds_new, option_ret_to_agg, args_exp) #aggregate preds after randomizing a feature.
+    ls_pf_ret_new = aggregate_newpred(preds_perm, option_ret_to_agg, args_exp) #aggregate preds after randomizing a feature.
     ls_pf_ret_diff = long_short_pf_ret_orig - ls_pf_ret_new.values
     ls_pf_ret_diff_mean = ls_pf_ret_diff.mean()
     ls_pf_ret_orig_mean = long_short_pf_ret_orig.mean()
-    ls_pf_ret_new_mean = ls_pf_ret_new.mean()
+    ls_pf_ret_perm_mean = ls_pf_ret_new.mean()
     #Regress differences with zero intercept model.
     # Is mean statistically significantly different from 0? -> Regress on intercept. 
     # # Standard OLS, HAC_maxlags, and HAC12 variants.
     diff_ols_results = regress_on_constant(ls_pf_ret_diff)
     # OLS coefficients and mean of difference should be equal (up to floating errors).
-    for i in diff_ols_results.keys():
-        assert abs(diff_ols_results[i]["Coef."].item() - ls_pf_ret_diff_mean) < 0.0000001, (f"Mean and "
-        "OLS coefficient are not equal for key {i}.")
-        assert abs(ls_pf_ret_orig_mean - ls_pf_ret_new_mean - ls_pf_ret_diff_mean) < 0.0000001, (
-               "Mean Orig - Mean New is not equal to the mean difference."
-        )
+    sanity_check_ls_means(diff_ols_results, ls_pf_ret_diff_mean, ls_pf_ret_orig_mean, ls_pf_ret_perm_mean)
+
     results = {}
-    results["diff_bal_acc_score"] = [bal_acc_test_orig, bal_acc_test_new, bal_acc_test_diff]
-    results["diff_long_short_ret"] = [ls_pf_ret_orig_mean, ls_pf_ret_new_mean, ls_pf_ret_diff_mean, diff_ols_results]
+    results["diff_bal_acc_score"] = [bal_acc_orig, bal_acc_perm, bal_acc_diff_orig_perm, bal_acc_dummy, bal_acc_diff_orig_dummy, bal_acc_diff_perm_dummy]
+    results["diff_long_short_ret"] = [ls_pf_ret_orig_mean, ls_pf_ret_perm_mean, ls_pf_ret_diff_mean, diff_ols_results]
     return results
 
 
@@ -520,16 +528,16 @@ if __name__ == "__main__":
         "Create portfolios from predictions."
     )
     subparsers = parser.add_subparsers()
-
+    # 1. Aggregate returns via predictions to portfolios.
     parser_agg = subparsers.add_parser("agg")
     parser_agg.set_defaults(mode=aggregate)
-
+    # 2.a) Performance evaluation of portfolios created with 'agg'.
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
-
+    # 2.b) Feature Importance (needs 'agg' to be done first).
     parser_perf = subparsers.add_parser("importance")
     parser_perf.set_defaults(mode=feature_importance)
-    
+    # Overhead Settings.
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "
                         "given by time created")

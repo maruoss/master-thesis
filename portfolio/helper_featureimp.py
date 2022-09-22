@@ -1,13 +1,15 @@
 from pathlib import Path
-import statsmodels.api as sm
+from typing import Tuple
 import pandas as pd
 import numpy as np
 import torch
 import pytorch_lightning as pl
 from pandas.api.types import is_numeric_dtype
+from sklearn.dummy import DummyClassifier
 
 from datamodule import DataModule
 from model.neuralnetwork import FFN
+from portfolio.helper_ols import regress_on_constant
 from portfolio.helper_perf import check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
 
@@ -184,7 +186,7 @@ def pred_on_data(
         bestmodelpath: Path, 
         permuted_feature_target_df: pd.DataFrame,
         args_exp: pd.Series,
-        ):
+        ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
     if model_name == "nn":
         model = FFN.load_from_checkpoint(bestmodelpath)
         dm = DataModule(
@@ -208,11 +210,17 @@ def pred_on_data(
         preds = trainer.predict(model=model, datamodule=dm) #returns list of batch predictions.
         preds = torch.cat(preds) #preds is a list already of [batch_size, num_classes]. 
         preds_argmax = preds.argmax(dim=1).numpy()
-        preds_argmax_df = pd.DataFrame(preds_argmax, columns=["pred"])
+        preds_perm_df = pd.DataFrame(preds_argmax, columns=["pred"])
+
+        # Dummy predictions.
+        dummy_clf = DummyClassifier(strategy="most_frequent")
+        preds_dummy = dummy_clf.fit(dm.X_train, dm.y_train).predict(dm.X_test)
+        preds_dummy_df = pd.DataFrame(preds_dummy, columns=["pred"])
 
         # y_true (of the whole data available, not only test dates).
-        y_new = dm.y.numpy()
-        return preds_argmax_df, y_new
+        y = dm.y.numpy()
+
+        return preds_perm_df, preds_dummy_df, y
     else:
         raise NotImplementedError(f"Model name: '{model_name}' is not implemented yet.")
 
@@ -228,10 +236,116 @@ def mean_str(col):
 
 def mean_str_add_stars(df) -> dict:
     """Take mean of columns of df. '*' will be counted
-    int string columns and the mean and the corresponding number of
+    in string columns and the mean and the corresponding number of
     '*' will be added in a new column.
     """
     series_mean = df.apply(mean_str)
     num_stars = int(series_mean["Signif."])
     series_mean["SignifStars"] = num_stars * "*"
     return series_mean.to_dict()
+
+
+def preserve_col_order(columns_orig: list, columns_norm: list, only_signif: bool) -> list:
+    """Replace string in columns_orig with strings in normalized column names
+    that start with the string in colums_orig."""
+    column_order = []
+    for col_orig in columns_orig:
+        if not col_orig.startswith("Mean") and not col_orig.startswith("Mom"):
+            to_add = [i for i in columns_norm if i.startswith(col_orig)]
+            if only_signif: #If no details, only take significance stars column.
+                to_add = [i for i in to_add if "Signif" in i]
+            column_order += to_add
+        else:
+            column_order += [col_orig]
+    return column_order
+
+
+def prepare_to_save(results: dict, only_signif: bool = False) -> pd.DataFrame:
+    """Normalizes deeply nested 'results' dictionary to a clean DataFrame. 
+    
+    First level keys will be row indeces, while second level keys will be the 
+    first entry in the column MultiIndex in the final DataFrame."""
+    features = list(results.keys())
+    measures = list(results[features[0]].keys())
+    # For balanced accuracy, json_normalize moves all ols results dictionarys 
+    # automatically to the end of the dataframe columns. Need to reorder 
+    # normalized df to original order before concatenating all dataframes.
+    balacc_columns_orig = list(results[features[0]][measures[0]].keys())
+    balacc_columns_norm = list(pd.json_normalize(results[features[0]][measures[0]]).columns)
+    balacc_col_order = preserve_col_order(balacc_columns_orig, 
+                                        balacc_columns_norm,
+                                        only_signif=only_signif)
+    # For the portfolio returns, order is already fine (only one ols result at the end). 
+    # But columns are also changed if only significance column is desired.
+    pfret_momdiff_orig = list(results[features[0]][measures[1]].keys())
+    pfret_momdiff_norm = list(pd.json_normalize(results[features[0]][measures[1]]).columns)
+    pfret_momdiff_col_order = preserve_col_order(pfret_momdiff_orig,
+                                                pfret_momdiff_norm,
+                                                only_signif=only_signif)
+    feature_collect = []
+    for feature in features:
+        measure_collect = []
+        for measure in measures:
+            normalized_df = pd.json_normalize(results[feature][measure])
+            if measure == measures[0]: #if measure is about balanced accuracy, keep ols results at original column order.
+                normalized_df = normalized_df.reindex(columns=balacc_col_order)
+            elif measure == measures[1]: #if measure is about portfolio return, need to keep only signif column if desired.
+                normalized_df = normalized_df.reindex(columns=pfret_momdiff_col_order)
+            measure_collect.append(normalized_df)
+        measure_collect = pd.concat(measure_collect, keys=measures, axis=1)
+        feature_collect.append(measure_collect)
+    feature_collect = pd.concat(feature_collect, axis=0)
+    feature_collect.index = features #set rows to be the feature names.
+    return feature_collect
+
+
+def get_mean_ols_diff(bal_acc_scores: dict, key: str) -> Tuple[dict, dict]:
+    """Regresses the ("Diff...") key in the bal_acc_scores dict on the intercept and
+    saves ols result in a nice dictionary. Also outputs mean of the key in
+    the bal_acc_scores dict.
+
+    Note: Key (string) has to start with a 'Diff' prefix. 
+    """
+    diff_bal_acc_score = bal_acc_scores[key]
+    diff_bal_acc_ols = regress_on_constant(diff_bal_acc_score)
+    diff_bal_acc_ols = {key[4:]: {key: values.to_dict() for (key, values) 
+                            in diff_bal_acc_ols.items()}}
+    mean_diff = {f"Mean{key}": np.mean(diff_bal_acc_score)}
+    return mean_diff, diff_bal_acc_ols
+
+
+def sanity_check_balacc_means(mean_bal_acc_ols: dict) -> None:
+    """Checks whether different numbers for the means coincide in value."""
+    for key in mean_bal_acc_ols.keys():
+        if not key.startswith("Mean"): # Only look at OLS result dictionaries.
+            for se in mean_bal_acc_ols[key].keys():
+                if not abs(mean_bal_acc_ols[key][se]["Coef."]["const"] - mean_bal_acc_ols[f"MeanDiff{key}"]) < 0.0000001:
+                    raise ValueError(f"Bal. acc. mean and the OLS coefficient are not equal for key {key}.")
+    if not abs(mean_bal_acc_ols["MeanOrig"] - mean_bal_acc_ols["MeanPerm"] - mean_bal_acc_ols["MeanDiffOrigPerm"]) < 0.0000001:
+        raise ValueError("Mean Orig - Mean Permu is not equal to the mean difference.")
+    if not abs(mean_bal_acc_ols["MeanOrig"] - mean_bal_acc_ols["MeanDummy"] - mean_bal_acc_ols["MeanDiffOrigDummy"]) < 0.0000001:
+        raise ValueError("Mean Orig - Mean Dummy is not equal to the mean difference.")
+    if not abs(mean_bal_acc_ols["MeanPerm"] - mean_bal_acc_ols["MeanDummy"] - mean_bal_acc_ols["MeanDiffPermDummy"]) < 0.0000001:
+        raise ValueError("Mean Perm - Mean Dummy is not equal to the mean difference.")
+
+def sanity_check_mom_ls_means(mom_ls_ret_mean_ols: dict) -> None:
+    """Checks whether different numbers for the mean of means coincide in value."""
+    for i in mom_ls_ret_mean_ols.keys():
+        if not i.startswith("Mom"):
+            if not abs(mom_ls_ret_mean_ols[i]["Coef."] - mom_ls_ret_mean_ols["MomDiff"]) < 0.0000001:
+                raise ValueError(f"Bal. acc. mean and the OLS coefficient are not equal for key {i}.")
+            if not abs(mom_ls_ret_mean_ols["MomOrig"] - mom_ls_ret_mean_ols["MomNew"] - mom_ls_ret_mean_ols["MomDiff"]) < 0.0000001:
+                raise ValueError("Mean of mean (Mom) Orig - Mean of mean (Mom) New is not equal to the mean of mean difference.")
+
+def sanity_check_ls_means(
+        diff_ols_results, 
+        ls_pf_ret_diff_mean,
+        ls_pf_ret_orig_mean,
+        ls_pf_ret_perm_mean
+        ) -> None:
+    """Checks whether different numbers for the means coincide in value."""
+    for i in diff_ols_results.keys():
+        if not abs(diff_ols_results[i]["Coef."].item() - ls_pf_ret_diff_mean) < 0.0000001:
+            raise ValueError(f"Mean and OLS coefficient are not equal for key {i}.")
+        if not abs(ls_pf_ret_orig_mean - ls_pf_ret_perm_mean - ls_pf_ret_diff_mean) < 0.0000001:
+            raise ValueError("Mean Orig - Mean New is not equal to the mean difference.")
