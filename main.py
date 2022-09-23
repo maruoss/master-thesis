@@ -89,7 +89,7 @@ def add_stress_test_param(args):
     it_keys = ["max_epochs", "max_iters", "n_estimators", "check_val_every", "num_boost_round"]
     for i in it_keys:
         if i in d.keys():
-            d[i] = 10 # change to 10 epochs
+            d[i] = 1 # change to 1 epoch
     d["num_samples"] = 1 #to test parallelism.
     d["gpus_per_trial"] = 1 #to use full gpu.
 

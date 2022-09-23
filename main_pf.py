@@ -295,8 +295,8 @@ def performance(args):
                     "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
                     }
     }
-    # Regress the regressions specified in regression_map on long_short portfolio return.
-    # The regression groups get summarized via the stargazer package.
+    # Regress and save results of the regressions specified in regression_map on 
+    # long_short portfolio return.The regression groups get summarized via the stargazer package.
     regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results)
     print("Done.")
     print("All done!")

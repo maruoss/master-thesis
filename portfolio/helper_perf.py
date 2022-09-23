@@ -309,27 +309,27 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     perfstats = []
     periods = 12 # we have monthly (excess) returns (as rf assumed 0.)
     # Convert decimals to percentages of a pandas series.
-    def to_pct(x):
+    def to_pct_string(x):
         """Transforms decimal to % string"""
         return f'{x:.2%}'
     # Cumulative Returns.
     cumr = (pf_returns+1).prod() - 1
-    cumr_str = cumr.apply(to_pct).rename("Cum. Return") #the to_pct funct. returns a string.
+    cumr_str = cumr.apply(to_pct_string).rename("Cum. Return") #the to_pct funct. returns a string.
     # Monthly arithmetic mean.
     mean = pf_returns.mean(axis=0)
-    mean_str = mean.apply(to_pct).rename("Mean (monthly)")
+    mean_str = mean.apply(to_pct_string).rename("Mean (monthly)")
     # Test significance of Long-Short (arithmetic) monthly mean being different from zero.
     # Also with HAC robust errors.
     mean_signif_series = get_save_mean_significance(pf_returns, path_results_perf)
     # Annualized arithmetic mean.
     mean_ann = mean * periods
-    mean_ann_str = mean_ann.apply(to_pct).rename("Mean (ann.)")
+    mean_ann_str = mean_ann.apply(to_pct_string).rename("Mean (ann.)")
     # Cagr from qs.stats.cagr is wrong (subtracts 1 from lenght of total months, bc it assumes its days)
     cagr = (pf_returns+1).prod() ** (periods/len(pf_returns)) - 1
-    cagr_str = cagr.apply(to_pct).rename("CAGR")
+    cagr_str = cagr.apply(to_pct_string).rename("CAGR")
     # Annualized volatility.
     vol_ann = pf_returns.std(ddof=1) * np.sqrt(periods)
-    vol_ann_str = vol_ann.apply(to_pct).rename("Volatility (ann.)")
+    vol_ann_str = vol_ann.apply(to_pct_string).rename("Volatility (ann.)")
     # Annualized Sharpe Ratio.
     sharpe_ann = mean_ann / vol_ann
     sharpe_ann_str = sharpe_ann.apply(lambda x: f'{x: .3f}').rename("Sharpe Ratio (ann.)")
@@ -370,7 +370,7 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     pf_returns_dd = pf_returns_dd.sort_index()
     prices = (1 + pf_returns_dd).cumprod()
     maxdd = (prices / prices.expanding().max()).min() - 1 #formula from quantstats
-    maxdd_str = maxdd.apply(to_pct).rename("Max Drawdown")
+    maxdd_str = maxdd.apply(to_pct_string).rename("Max Drawdown")
     #Max Drawdown Days.
     maxdd_days = []
     for columname in pf_returns_dd.columns:

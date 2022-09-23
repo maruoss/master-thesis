@@ -65,6 +65,11 @@ def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Ser
             stargazer.covariate_order(cov_order)
             # Add cov type in notes.
             stargazer.add_custom_notes([f"Cov. Type:\t{cov_type}"])
+            # Dont show degrees of freedom.
+            stargazer.show_degrees_of_freedom(False)
+            # Show t-statistics below coefficients instead of standard errors.
+            stargazer.show_t_statistics(True)
+            # Save as txt and html.
             with (path_results/group/f"stargazer_latex_{cov_type}.txt").open("w") as text_file:
                 text_file.write(stargazer.render_latex(escape=True))
             with (path_results/group/f"stargazer_{cov_type}.html").open("w") as text_file:
