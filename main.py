@@ -65,6 +65,9 @@ def looper(args):
         best_ckpt_path,
         best_config) = run(args, year_idx, time, best_ckpt_path, best_config)
         time_collect[f"loop_{year_idx}"], start_loop_time = save_time(start_loop_time)
+        # Some memory leak can be avoided by gc collect.
+        import gc
+        gc.collect()
 
     # Calculate metrics and save to .csv.
     summary_to_csv(collect, exp_dir)

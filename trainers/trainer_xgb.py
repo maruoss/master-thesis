@@ -245,9 +245,9 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
             preds = np.round(preds) # if 2 classes, round the probabilities
         preds = preds.astype(int) #convert classes from floats to ints.
         # preds_argmax = preds[0].argmax(dim=1).numpy() # assumes batchsize is whole testset
-        preds_argmax_df = pd.DataFrame(preds, columns=["pred"])
+        preds_df = pd.DataFrame(preds, columns=["pred"])
         # Prediction path.
         save_to_dir = loop_path/f"prediction{test_year_end}.csv"
-        preds_argmax_df.to_csv(save_to_dir, index_label="id")
+        preds_df.to_csv(save_to_dir, index_label="id")
 
     return best_result, exp_path, ckpt_path, config

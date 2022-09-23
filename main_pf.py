@@ -209,17 +209,21 @@ def performance(args):
 
     print("Load the Monthly Riskfree rate from the 5 Fama French Factors Dataset...")
     # Skip first two rows (text description) and omit yearly data (after row 706).
-    monthly_rf = load_rf_monthly(path_data)
+    monthly_rf = load_rf_monthly(path_data) #dataframe
     # Filter months (rows) to align with pf_returns.
     monthly_rf = filter_idx(monthly_rf, pf_returns)
 
     # Subtract Rf from class portfolio returns to get excess returns.
-    print("Subtract Riskfree rate *only from class* portfolios but *not* from the "
-          "long short portfolio, as the riskfree rate cancels out for the long short "
-          "portfolio...")
-    class_pf_returns = pf_returns.columns.str.startswith("class")
-    pf_returns.loc[:, class_pf_returns] = pf_returns.loc[:, class_pf_returns] - monthly_rf.values #.values needed to broadcast over columns.
-
+    print("Subtract Riskfree rate only from *class* portfolios AND where there was "
+          "made an investment, but *not* from the long short portfolio, as the riskfree "
+          "rate cancels out for the long short portfolio...")
+    class_pf_names = [col for col in pf_returns.columns if col.startswith("class")]
+    # ONLY SUBTRACT RF FROM MONTHS IN CLASS PORTFOLIOS WHERE THERE WAS AN INVESTMENT MADE.
+    for pf in class_pf_names:
+        # Exactly zero return means there was no investment at all (no prediction for that class in that month).
+        zero_inv_mask = (pf_returns[pf] == 0)
+        # Where replaces values where condition is False (where there was investment -> subtract riskfree of the respective month).
+        pf_returns.loc[:, pf] = (pf_returns.loc[:, pf]).where(zero_inv_mask, lambda x: x - monthly_rf.values.squeeze()) #.values needed to broadcast over columns.
     # Make 'results' subfolder.
     path_results = exp_path/"results"
     path_results.mkdir(exist_ok=True, parents=False)
@@ -374,7 +378,7 @@ def feature_importance(args):
 
     #Save sorted results (once only significance, once with full ols results).
     path_importance = exp_path/"results"/"importance"
-    path_importance.mkdir(exist_ok=True, parents=False)
+    path_importance.mkdir(exist_ok=True, parents=True)
     results_sorted_balacc_df.to_csv(path_importance/"balaccmeandiff_sorted_details.csv")
     results_sorted_balacc_df_onlysignif.to_csv(path_importance/"balaccmeandiff_sorted.csv")
     results_sorted_meanofmeandiffpf_df.to_csv(path_importance/"meanofmeandiffpf_sorted_details.csv")
@@ -475,9 +479,13 @@ def loop_years(
     preds_dummy_list = []
     for yearidx, bestmodelpath in yearidx_bestmodelpaths: #should be in ascending order.
         print(f"Loading trained model: '{model_name}' to predict on randomized feature from path: {bestmodelpath}")
-        preds_perm_year, preds_dummy_year, y = pred_on_data(model_name, yearidx, bestmodelpath, permuted_feature_target, args_exp)
+        preds_perm_year, preds_dummy_year, y = pred_on_data(model_name, yearidx, bestmodelpath, 
+                                                            permuted_feature_target, args_exp)
         preds_perm_list.append(preds_perm_year)
         preds_dummy_list.append(preds_dummy_year)
+        # Actually makes some difference.
+        import gc
+        gc.collect()
     # Check true y vectors from different sources. Takes 'y' from the last 
     # for loop iteration -> should be the whole y of the data.
     check_y_classification(y, orig_feature_target, args_exp.label_fn)

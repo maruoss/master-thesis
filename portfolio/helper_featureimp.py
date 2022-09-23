@@ -6,9 +6,12 @@ import torch
 import pytorch_lightning as pl
 from pandas.api.types import is_numeric_dtype
 from sklearn.dummy import DummyClassifier
+from joblib import load
+import xgboost as xgb
 
-from datamodule import DataModule
+from datamodule import DataModule, Dataset
 from model.neuralnetwork import FFN
+from model.transformer import TransformerEncoder
 from portfolio.helper_ols import regress_on_constant
 from portfolio.helper_perf import check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
@@ -88,7 +91,8 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
                     option_ret_to_agg: pd.DataFrame, # Is used for the data aggregation/ indeces check.
                     args_exp: pd.Series
                     ) -> pd.Series:
-    """Aggregate orig_feature_df into class portfolios depending on the predictions made in preds_concat_df.
+    """Aggregate orig_feature_df into class portfolios depending on the predictions 
+    made in preds_concat_df.
     """
     dates = option_ret_to_agg["date"]
     eoy_indeces, eom_indeces = YearMonthEndIndeces(
@@ -187,13 +191,22 @@ def pred_on_data(
         permuted_feature_target_df: pd.DataFrame,
         args_exp: pd.Series,
         ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-    if model_name == "nn":
-        model = FFN.load_from_checkpoint(bestmodelpath)
+    # Models based on Pytorch Lightning.
+    if model_name in ["nn", "transformer"]:
+        # If small dataset can predict in one go, otherwise make batchsize smaller.
+        if args_exp.dataset == "small":
+            batch_size = 10000000
+        else:
+            batch_size = 1000
+        if model_name == "nn":
+            model = FFN.load_from_checkpoint(bestmodelpath)
+        elif model_name == "transformer":
+            model = TransformerEncoder.load_from_checkpoint(bestmodelpath)
         dm = DataModule(
             path=None, #Set to None.
             year_idx=yearidx, #Important.
             dataset=None, #Set to None.
-            batch_size=100000000, #Predict in one step.
+            batch_size=batch_size, #Predict in one step.
             init_train_length=args_exp.init_train_length,
             val_length=args_exp.val_length,
             test_length=args_exp.test_length,
@@ -207,19 +220,53 @@ def pred_on_data(
             enable_progress_bar=False,
         )
         # Predict.
-        preds = trainer.predict(model=model, datamodule=dm) #returns list of batch predictions.
+        preds = trainer.predict(model=model, datamodule=dm) #Returns list of batch predictions.
         preds = torch.cat(preds) #preds is a list already of [batch_size, num_classes]. 
         preds_argmax = preds.argmax(dim=1).numpy()
         preds_perm_df = pd.DataFrame(preds_argmax, columns=["pred"])
-
         # Dummy predictions.
         dummy_clf = DummyClassifier(strategy="most_frequent")
         preds_dummy = dummy_clf.fit(dm.X_train, dm.y_train).predict(dm.X_test)
         preds_dummy_df = pd.DataFrame(preds_dummy, columns=["pred"])
-
         # y_true (of the whole data available, not only test dates).
         y = dm.y.numpy()
-
+        return preds_perm_df, preds_dummy_df, y
+    elif model_name in ["lin", "svm", "rf", "xgb"]:
+        if model_name == "xgb":
+            best_bst = xgb.Booster()
+            best_bst.load_model(bestmodelpath)
+        else:
+            best_est = load(bestmodelpath) #Load joblib best estimator file.
+        data = Dataset(
+            path=None, #Set to None.
+            year_idx=yearidx, #Important.
+            dataset=None, #Set to None.
+            init_train_length=args_exp.init_train_length,
+            val_length=args_exp.val_length,
+            test_length=args_exp.test_length,
+            label_fn=args_exp.label_fn,
+            custom_data=permuted_feature_target_df, #Provide data directly.
+        )
+        # Predict
+        if model_name == "xgb":
+            # Get test data and labels.
+            X_test, y_test = data.get_test()
+            D_test = xgb.DMatrix(X_test, label=y_test)
+            # Binary problem outputs probabilites, multiclass outputs argmax already.
+            preds = best_bst.predict(D_test) #returns np.array
+            if data.num_classes == 2:
+                preds = np.round(preds) # if 2 classes, round the probabilities
+            preds = preds.astype(int) #convert classes from floats to ints.
+            preds_perm_df = pd.DataFrame(preds, columns=["pred"])
+        else:
+            preds = best_est.predict(data.X_test)
+            preds_perm_df = pd.DataFrame(preds, columns=["pred"])
+        # Dummy predictions.
+        dummy_clf = DummyClassifier(strategy="most_frequent")
+        preds_dummy = dummy_clf.fit(data.X_train, data.y_train).predict(data.X_test)
+        preds_dummy_df = pd.DataFrame(preds_dummy, columns=["pred"])
+        # y_true (of the whole dataset)
+        y = data.y
         return preds_perm_df, preds_dummy_df, y
     else:
         raise NotImplementedError(f"Model name: '{model_name}' is not implemented yet.")

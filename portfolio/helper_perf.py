@@ -349,17 +349,19 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Create X as [[1., 1., ..., 1.].T, [mkt_excess_ret].T] (with intercept).
     X = np.array([np.ones_like(mkt_excess_ret_monthly), mkt_excess_ret_monthly]).T
     alphabetas = np.linalg.inv(X.T@X)@X.T@pf_returns #regress pf_returns (y) on [1, mkt_excess_ret] (X)
-    alphas = alphabetas.iloc[0, :] * periods #annualized alpha
+    alphas = alphabetas.iloc[0, :]
+    alphas_ann = alphas * periods #annualized alpha
     betas = alphabetas.iloc[1, :]
-    alphas_str = alphas.apply(lambda x: f'{x: .3f}').rename("Alpha (ann.)")
+    alphas_ann_str = alphas_ann.apply(lambda x: f'{x: .3f}').rename("Alpha (ann.)")
+    alphas_str = alphas.apply(lambda x: f'{x: .3f}').rename("Alpha (monthly.)")
     betas_str = betas.apply(lambda x: f'{x: .3f}').rename("Beta")
     # Test significance of Alpha betas and save detailed ols results.
     # Also with HAC robust errors.
-    alphabeta_signif_df = get_save_alphabeta_significance(pf_returns,
+    alpha_signif_df, beta_signif_df = get_save_alphabeta_significance(pf_returns,
                                                         X, 
                                                         path_results_perf, 
-                                                        alphas/12, #check alphas from the "manual" calc.
-                                                        betas #check beta from the "manual" calc.
+                                                        alphas, #check alphas from the "manual" calc.
+                                                        betas, #check beta from the "manual" calc.
                                                         )
     # Max Drawdown.
     pf_returns_dd = pf_returns.copy()
@@ -392,7 +394,7 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Collect perfstats "strings" (better for saving/ formatting?).
     perfstats += [cumr_str, cagr_str, mean_str, mean_signif_series, mean_ann_str, vol_ann_str, sharpe_ann_str, 
                 sharpe_ann_geom_str, maxdd_str, maxdd_days_str, calmar_str, skew_str, 
-                kurt_str, alphas_str, betas_str, alphabeta_signif_df
+                kurt_str, alphas_ann_str, alphas_str, alpha_signif_df, betas_str, beta_signif_df
                 ]
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.

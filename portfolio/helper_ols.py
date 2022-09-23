@@ -254,8 +254,9 @@ def gen_stars(p_value) -> str:
 def get_save_mean_significance(pf_returns: pd.DataFrame, parent_path: Path):
     save_ols_path = parent_path/"Mean_Significance"
     save_ols_path.mkdir(parents=False, exist_ok=True)
-    mean_signif_series = pd.Series(np.zeros(pf_returns.shape[1])*np.nan, dtype=str).rename("Mean (monthly) Signif. Standard")
-    mean_signif_series.index = pf_returns.columns
+    # Assuming 3 standard error types are to be saved in the results.
+    mean_signif_df = pd.DataFrame(np.zeros((pf_returns.shape[1], 3))*np.nan, dtype=str)
+    mean_signif_df.index = pf_returns.columns
     for pf in list(pf_returns.columns):
         mean_signif_results = regress_on_constant(
                                 pf_returns[pf], 
@@ -266,33 +267,49 @@ def get_save_mean_significance(pf_returns: pd.DataFrame, parent_path: Path):
         for se in mean_signif_results.values():
             assert abs(se["Coef."].item() - pf_returns.mean(axis=0)[pf]) < 0.0000001
         # Add to final output series.
-        mean_signif_series[pf] = mean_signif_results["Standard"]["Signif."].item()
-    return mean_signif_series
+        se_significances = []
+        for se in mean_signif_results.keys():
+            se_significances.append(mean_signif_results[se]["Signif."].item())
+        col_names_se = list(mean_signif_results.keys())
+        mean_signif_df.loc[pf] = se_significances
+        mean_signif_df.columns = col_names_se
+    return mean_signif_df
 
 
 def get_save_alphabeta_significance(pf_returns: pd.DataFrame,
                                     X: np.ndarray,
                                     parent_path: Path,
-                                    alphas,
-                                    betas
+                                    alphas, #monthly alphas
+                                    betas,
                                     ):
-    alphabeta_signif_df = pd.DataFrame(np.zeros((pf_returns.shape[1], 2))*np.nan, 
-                                                    dtype=str,
-                                                    columns=["Alpha Signif. Standard", 
-                                                            "Beta Signif. Standard"])
-    alphabeta_signif_df.index = pf_returns.columns
+    # Assuming 3 standard error types are to be saved for alpha and beta. (3*2=6)
+    alpha_signif_df = pd.DataFrame(np.zeros((pf_returns.shape[1], 3))*np.nan, dtype=str)
+    beta_signif_df = pd.DataFrame(np.zeros((pf_returns.shape[1], 3))*np.nan, dtype=str)
+    alpha_signif_df.index = pf_returns.columns
+    beta_signif_df.index = pf_returns.columns
+
     save_ols_path = parent_path/"AlphaBeta_Significance"
     save_ols_path.mkdir(parents=False, exist_ok=True)
-    collect_ols = {}
     for pf in list(pf_returns.columns):
         y = pf_returns[pf]
-        alpha_beta_signif_results = regress_on_X(y, X, save_ols=True, 
+        alpha_beta_ols_results = regress_on_X(y, X, save_ols=True, 
                                                     save_ols_path=save_ols_path/pf)
-        collect_ols[pf] = alpha_beta_signif_results
-        for se in alpha_beta_signif_results.values():
+        #*** Sanity Check
+        for se in alpha_beta_ols_results.values(): #se for standard error.
             # Check if alpha/beta coincides with already calculated alpha/beta.
             assert abs(se["Coef."].iloc[0] - alphas[pf]) < 0.0000001
             assert abs(se["Coef."].iloc[1] - betas[pf]) < 0.0000001
-        # .values very important, otherwise NaNs, since df and series do not have the same col/row indeces.
-        alphabeta_signif_df.loc[pf] = alpha_beta_signif_results["Standard"]["Signif."].values
-    return alphabeta_signif_df
+        #***
+        se_significances_alpha = []
+        se_significances_beta = []
+        for se in alpha_beta_ols_results.values():
+            se_significances_alpha.append(se["Signif."].iloc[0])
+            se_significances_beta.append(se["Signif."].iloc[1])
+        se_names = list(alpha_beta_ols_results.keys())
+        # Alpha.
+        alpha_signif_df.columns = se_names
+        alpha_signif_df.loc[pf] = se_significances_alpha
+        # Beta.
+        beta_signif_df.columns = se_names
+        beta_signif_df.loc[pf] = se_significances_beta
+    return alpha_signif_df, beta_signif_df
