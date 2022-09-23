@@ -245,7 +245,7 @@ def gen_stars(p_value) -> str:
         return "***"
     elif p_value < 0.05:
         return "**"
-    elif p_value < 0.01:
+    elif p_value < 0.1:
         return "*"
     else:
         return ""
