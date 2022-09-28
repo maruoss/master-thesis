@@ -1,18 +1,28 @@
 from argparse import ArgumentParser
 from pathlib import Path
-import pdb
 import time
 from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import pdb
 
 from tqdm import tqdm
 from sklearn.metrics import balanced_accuracy_score
 from data.utils.convert_check import small_med_big_eq
 from datamodule import load_data
 from portfolio.helper_ols import regress_factors, regress_on_constant
-from portfolio.helper_perf import check_eoy, collect_preds, concat_and_save_preds, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, save_performance_statistics, various_tests, weighted_means_by_column
+from portfolio.helper_perf import (aggregate_threshold, 
+                                    check_eoy, 
+                                    collect_preds, 
+                                    concat_and_save_preds, 
+                                    filter_idx, 
+                                    get_and_check_min_max_pred, 
+                                    get_class_ignore_dates, get_long_short_df, 
+                                    save_performance_statistics, 
+                                    various_tests, 
+                                    weighted_means_by_column
+                                    )
 from portfolio.helper_featureimp import (aggregate_newpred, 
                                         check_y_classification, 
                                         get_mean_ols_diff, 
@@ -24,14 +34,14 @@ from portfolio.helper_featureimp import (aggregate_newpred,
                                         sanity_check_ls_means, 
                                         sanity_check_mom_ls_means
                                         )
-
-
 from portfolio.load_files import load_ff_monthly, load_mom_monthly, load_pfret_from_pfs, load_rf_monthly, load_vix_monthly, load_vvix_monthly
 from utils.preprocess import YearMonthEndIndeces
 
 
 def aggregate(args):
-    """Create aggregated monthly csv files in a new 'portfolios' subfolder within
+    """Produces the portfolios and predictions folder.
+    
+    Create aggregated monthly csv files in a new 'portfolios' subfolder within
     the logs/experiment_folder. The aggregation is done by equally weighting
     each option for the respective month."""
     print("Start aggregation of predictions in each month...")
@@ -70,7 +80,11 @@ def aggregate(args):
     dates = df_small["date"]
     # Get args from experiment.
     # Alternatively: Load json with json.load() and convert dict/list to df.
-    args_exp = pd.read_json(exp_dir/"args.json", typ="series")
+    args_exp = pd.read_json(exp_dir/"args.json", typ="series") # series, NOT a dict.
+    # If longclass was not specified in CLI, take max possible class to predict.
+    if not args.longclass:
+        d = vars(args)
+        d["longclass"] = int(args_exp["label_fn"][-1]) - 1 #not implemented with 'binary' yet.
     # Get start of year index and all end of month indeces. Load with args that 
     # were used in the actual experiment.
     eoy_indeces, eom_indeces = YearMonthEndIndeces(
@@ -99,9 +113,9 @@ def aggregate(args):
     # Create single weight column 'if_long_short' with -1 for lowest and 1 for 
     # highest predicted class. Rest is 0.
     print("Create weight columns for each class...")
-    max_pred, min_pred, classes = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
+    max_pred, min_prediction, classes = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     # 1.5x faster than pd.map...
-    condlist = [concat_df["pred"] == min_pred, concat_df["pred"] == max_pred]
+    condlist = [concat_df["pred"] == min_prediction, concat_df["pred"] == args.longclass]
     choicelist = [-1, 1]
     no_alloc_value = 0
     concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
@@ -117,25 +131,32 @@ def aggregate(args):
     print("Done.")
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
-    agg_dict = {}
-    for c in classes:
-        agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column, col_list, f"weights_{c}")
-        agg_dict[f"class{c}"] = agg_df
+    # Aggregate returns per month where there are at least 'min_pred' predictions 
+    # made for that class in that month, otherwise return 0 for that month.
+    agg_dict = aggregate_threshold(concat_df, 
+                                   classes, 
+                                   col_list, 
+                                   weighted_means_by_column,
+                                   min_pred=args.min_pred)
     print("Done.")
     
-    print("Which classes were not predicted at all in a respective month?...")
+    print("****Which classes were not invested in at all, in a respective month?****")
     # For each class print out months where no prediction was allocated for that class, 
     # and save these indeces for short and long class to later ignore the returns of 
     # these months.
-    class_ignore = get_class_ignore_dates(concat_df, classes) #returns dict
+    class_ignore = get_class_ignore_dates(agg_dict, classes, longclass=args.longclass) #returns dict
     print("Done.")
+    print("**************************************************************************")
     
     # Perform various tests to check our calculations.
     test_concat = concat_df.copy()
     test_agg_dict = agg_dict.copy()
+    print("***Check***")
     print("Sanity test the aggregated results...")
-    various_tests(agg_dict, concat_df, col_list, classes, class_ignore)
+    various_tests(agg_dict, concat_df, col_list, classes, class_ignore, 
+                    min_pred=args.min_pred, longclass=args.longclass)
     print("Done.")
+    print("***********")
     # Make sure tests did not alter dataframes.
     pd.testing.assert_frame_equal(test_concat, concat_df)
     for c in classes:
@@ -151,36 +172,31 @@ def aggregate(args):
             df.to_csv(pf_dir/f"{class_c}.csv")
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
         raise FileExistsError("Directory 'portfolios' already exists. Will not "
-        "touch folder and exit code.") from err
+                                "touch folder and exit code.") from err
     print("Done.")
 
     print("Create Long Short Portfolio while ignoring months where one side "
         "is not allocated...")
+    shortclass = classes[0] #should be 0
+    assert shortclass == 0, "Class of short portfolio not 0. Check why."
+    longclass = args.longclass
+    print(f"Subtract Short portfolio (class {shortclass}) from Long portfolio "
+            f"(class {longclass})...")
     # Long-Short PF (highest class (long) - lowest class (short))
-    short_class = classes[0] #should be 0
-    assert short_class == 0, "Class of short portfolio not 0. Check why."
-    long_class = classes[-1] #should be 2 for binary, 3 for 'multi3', etc.
-    print(f"Subtract Short portfolio (class {short_class}) from Long portfolio "
-            f"(class {long_class}) and save to long{long_class}short{short_class}.csv...")
-    # Subtract short from long portfolio.
-    long_df = agg_dict[f"class{long_class}"].copy() #deep copy to not change original agg_dict
-    short_df = agg_dict[f"class{short_class}"].copy() #deep copy to not change original agg_dict
-    months_no_inv = class_ignore[f"class{long_class}"].union(class_ignore[f"class{short_class}"]) #union of months to set to 0.
-    long_df.loc[months_no_inv, :] = 0
-    short_df.loc[months_no_inv, :] = 0
-    long_short_df = long_df - short_df #months that are 0 in both dfs stay 0 everywhere.
-    assert ((long_short_df.drop(months_no_inv)["pred"] == (long_class - short_class)).all() and #'pred' should be long_class - short_class
-            (long_short_df.drop(months_no_inv)["if_long_short"] == 2).all()) #'if_long_short' should be 2 (1 - (-1) = 2)
+    long_short_df = get_long_short_df(agg_dict, classes, class_ignore,
+                                    shortclass=shortclass, longclass=longclass)
     # Drop one-hot "weight" columns here.
     cols_to_keep = [col for col in long_short_df.columns.tolist() if "weight" not in col]
     long_short_df = long_short_df[cols_to_keep]
-    long_short_df.to_csv(pf_dir/f"long{long_class}short{short_class}.csv")
+    long_short_df.to_csv(pf_dir/f"long{longclass}short{shortclass}.csv")
     print("Done.")
     print("All done!")
 
 
 def performance(args):
-    """Read the monthly aggregated portfolios from the 'portfolios' subfolder
+    """Produces the results folder.
+    
+    Read the monthly aggregated portfolios from the 'portfolios' subfolder
     within the experiment directory and procude performance statistics in a csv,
     png and latex file. Also produce a plot with the performance of each portfolio."""
     print("Starting performance evaluation of portfolios...")
@@ -213,7 +229,7 @@ def performance(args):
     # Filter months (rows) to align with pf_returns.
     monthly_rf = filter_idx(monthly_rf, pf_returns)
 
-    # Subtract Rf from class portfolio returns to get excess returns.
+    # Excess Returns: Subtract RISKFREE RATE from class portfolio returns to get excess returns.
     print("Subtract Riskfree rate only from *class* portfolios AND where there was "
           "made an investment, but *not* from the long short portfolio, as the riskfree "
           "rate cancels out for the long short portfolio...")
@@ -259,7 +275,10 @@ def performance(args):
     print("Done.")
 
     # Variable of interest (y). We want to explain the monthly long short PF returns.
-    long_short_pf_returns = pf_returns["long4short0"]
+    long_short_pf_name = [col for col in pf_returns.columns if col.startswith("long")]
+    assert len(long_short_pf_name) == 1, ("More than one long-short portfolio in pf_returns/ portfolio path. "
+                                        "Regressions currently take only one target variable...")
+    long_short_pf_returns = pf_returns[long_short_pf_name]
 
     # Align the months of the following dataframes with the long short dataframe.
     list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
@@ -321,6 +340,10 @@ def feature_importance(args):
     exp_path = matches_list[0]
     # Get experiment args.
     args_exp = pd.read_json(exp_path/"args.json", typ="series")
+    # If longclass was not specified in CLI, take max possible class to predict.
+    if not args.longclass:
+        d = vars(args)
+        d["longclass"] = int(args_exp["label_fn"][-1]) - 1 #not implemented with 'binary' yet.
     # Get original predictions.
     preds_orig = pd.read_csv(exp_path/"all_pred.csv", index_col=0) #shape [index, cols: ["id", "pred"]]
     # Get (year_idx, best_model_path) for each year into a list.
@@ -336,7 +359,7 @@ def feature_importance(args):
     features_list.remove("date")
     features_list.remove("option_ret")
     # How many sample permutation per feature?
-    num_samples_per_feature = 20
+    num_samples_per_feature = 30 #has to be > 1, otherwise error in ols val_bal_acc.
     # Original long short monthly pf returns?
     path_portfolios = exp_path/"portfolios"
     if int(args_exp.label_fn[-1:]) == 5: # 5 class classification.
@@ -349,13 +372,16 @@ def feature_importance(args):
                                   "5 class classification for now")
     # Aggregate original optionreturns to sanity check long_short portfolio returns.
     test = orig_feature_target[["date", "option_ret"]].copy()
-    check_orig = aggregate_newpred(preds_orig, test, args_exp)
+    check_orig = aggregate_newpred(preds_orig, test, args_exp, 
+                                    longclass=args.longclass, min_pred=args.min_pred)
     assert (abs(long_short_pf_ret_orig - check_orig) < 0.00001).all(), ("Loaded "
     "aggregated option returns have substantial differences to the check aggregation of the "
-    "original option returns.")
+    "original option returns. Maybe longclass or min_pred are different?")
     # ****
 
-    results = loop_features(orig_feature_target=orig_feature_target, 
+    results = loop_features(
+                         args=args,
+                         orig_feature_target=orig_feature_target, 
                          features_list=features_list, 
                          yearidx_bestmodelpaths=yearidx_bestmodelpaths,
                          preds_orig=preds_orig,
@@ -389,6 +415,7 @@ def feature_importance(args):
 
 
 def loop_features(
+                args,
                 orig_feature_target: pd.DataFrame,
                 features_list: list, 
                 yearidx_bestmodelpaths: Tuple[int, Path],
@@ -402,7 +429,9 @@ def loop_features(
         bal_acc_scores = {} #list
         ls_ret_avg_ols = {} #dict of list
         for _ in range(num_samples_per_feature):
-            result = loop_years(orig_feature_target=orig_feature_target,
+            result = loop_years(
+                                args=args,
+                                orig_feature_target=orig_feature_target,
                                 feature=feature,
                                 yearidx_bestmodelpaths=yearidx_bestmodelpaths,
                                 preds_orig=preds_orig,
@@ -459,6 +488,7 @@ def loop_features(
 
 
 def loop_years(
+            args,
             orig_feature_target: pd.DataFrame,
             feature: str,
             yearidx_bestmodelpaths: list,
@@ -511,8 +541,12 @@ def loop_years(
 
     # 2. Output: Get mean difference of monthly long-short portfolio returns.
     # Perform aggregation for new predictions.
+    # Aggregate preds after randomizing a feature.
     option_ret_to_agg = orig_feature_target[["date", "option_ret"]]
-    ls_pf_ret_new = aggregate_newpred(preds_perm, option_ret_to_agg, args_exp) #aggregate preds after randomizing a feature.
+    ls_pf_ret_new = aggregate_newpred(preds_perm, option_ret_to_agg, 
+                                    args_exp,
+                                    longclass=args.longclass,
+                                    min_pred=args.min_pred)
     ls_pf_ret_diff = long_short_pf_ret_orig - ls_pf_ret_new.values
     ls_pf_ret_diff_mean = ls_pf_ret_diff.mean()
     ls_pf_ret_orig_mean = long_short_pf_ret_orig.mean()
@@ -539,12 +573,19 @@ if __name__ == "__main__":
     # 1. Aggregate returns via predictions to portfolios.
     parser_agg = subparsers.add_parser("agg")
     parser_agg.set_defaults(mode=aggregate)
+    parser_agg.add_argument("--longclass", type=int)
+    parser_agg.add_argument("--min_pred", type=int, default=0,
+                            help="The minimum number of predictions in each portfolio")
+    # Assuming shortclass is always the 0 prediction PF.
     # 2.a) Performance evaluation of portfolios created with 'agg'.
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
     # 2.b) Feature Importance (needs 'agg' to be done first).
-    parser_perf = subparsers.add_parser("importance")
-    parser_perf.set_defaults(mode=feature_importance)
+    parser_impt = subparsers.add_parser("importance")
+    parser_impt.set_defaults(mode=feature_importance)
+    parser_impt.add_argument("--longclass", type=int)
+    parser_impt.add_argument("--min_pred", type=int, default=0,
+                             help="The minimum number of predictions in each portfolio")
     # Overhead Settings.
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "

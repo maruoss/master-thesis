@@ -59,7 +59,7 @@ def looper(args):
     best_ckpt_path = None # for both train and tune
     best_config = None # for tune
     start_loop_time = start_time
-    for year_idx in range(27 - (args.init_train_length + args.val_length + args.test_length)):
+    for year_idx in range(5, 27 - (args.init_train_length + args.val_length + args.test_length) - 1):
         (collect[f"val{val_year_start+year_idx}{val_year_end+year_idx}"],
         exp_dir,
         best_ckpt_path,

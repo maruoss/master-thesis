@@ -35,6 +35,7 @@ def call_opt_ret(df: pd.DataFrame, opt_ids: list) -> pd.DataFrame:
                 df.loc[idx, "option_ret"] = None
                 break
             if df_opt.iloc[i]["date"] + MonthEnd(1) == df_opt.iloc[i+1]["date"]:
+                # Long Delta * Stock, Short Call Option.
                 t1 = (df_opt.iloc[i]["delta"] * df_opt.iloc[i+1]["spotprice"]) - df_opt.iloc[i+1]["mid_price"]
                 t = (df_opt.iloc[i]["delta"] * df_opt.iloc[i]["spotprice"]) - df_opt.iloc[i]["mid_price"]
                 df.loc[idx, "option_ret"] = t1/t - 1

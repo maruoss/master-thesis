@@ -113,7 +113,7 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     assert min_theor == min_real, (
         "Not a single month has the prediction of the theoretical minimum class.")
     months_no_min = min_real_series[min_real_series != min_real].count()
-    print(f"Number of months where Short class {min_real} is not predicted:", 
+    print(f"Number of months where lowest class {min_real} is not predicted:", 
             months_no_min, "out of", f"{len(min_real_series)}.")
     # Max pred value realized per month.
     max_real_series = concat_df.groupby("date")["pred"].max()
@@ -122,19 +122,47 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     assert max_theor == max_real, (
         "Not a single month has the prediction of the theoretical maximum class.")
     months_no_max = max_real_series[max_real_series != max_real].count()
-    print(f"Number of months where Long class {max_real} is not predicted:", 
+    print(f"Number of months where largest class {max_real} is not predicted:", 
             months_no_max, "out of", f"{len(max_real_series)}.")
     return max_real, min_real, classes
 
 
-def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list, class_ignore: dict):
+def aggregate_threshold(concat_df, classes, col_list, agg_func, min_pred: int):
+    agg_dict = {}
+    for c in classes:
+        agg_df = concat_df.groupby("date").aggregate(agg_func, col_list, f"weights_{c}")
+        count = concat_df.groupby("date")[f"weights_{c}"].aggregate("sum")
+        # length = concat_df.groupby("date")[f"weights_{c}"].aggregate(lambda x: len(x))
+        # length2 = concat_df.groupby("date")[f"weights_{c}"].aggregate("count")
+        # pct = concat_df.groupby("date")[f"weights_{c}"].aggregate(lambda x: sum(x) / len(x))
+        # SET INVESTMENT TO ZERO BELOW CERTAIN CUTOFF OF # PREDICTIONS
+        agg_df = agg_df.where(count > min_pred, 0) 
+        agg_dict[f"class{c}"] = agg_df
+    return agg_dict
+
+
+def get_long_short_df(agg_dict, classes, class_ignore, shortclass, longclass):
+    # Subtract short from long portfolio.
+    long_df = agg_dict[f"class{longclass}"].copy() #deep copy to not change original agg_dict
+    short_df = agg_dict[f"class{shortclass}"].copy() #deep copy to not change original agg_dict
+    months_no_inv = class_ignore[f"class{longclass}"].union(class_ignore[f"class{shortclass}"]) #union of months to set to 0.
+    long_df.loc[months_no_inv, :] = 0
+    short_df.loc[months_no_inv, :] = 0
+    long_short_df = long_df - short_df #months that are 0 in both dfs stay 0 everywhere.
+    assert ((long_short_df.drop(months_no_inv)["pred"] == (longclass - shortclass)).all() and #'pred' should be long_class - short_class
+        (long_short_df.drop(months_no_inv)["if_long_short"] == 2).all()) #'if_long_short' should be 2 (1 - (-1) = 2)
+    print(f"Summary: In {len(months_no_inv)} months or in {len(months_no_inv)/len(long_short_df):.2%} "
+        f"of the total {len(long_short_df)} months there has not been made a long-short investment.")
+    return long_short_df
+
+
+def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list, 
+                    class_ignore: dict, min_pred: int, longclass: int):
     """Perform various sanity checks on our monthly aggregated results in agg_dict."""
     # Test1: Compare agg_dict with agg_dict2, calculated via 'weighted_avg' function 
     # and not via 'np.average'. They should yield the same (up to small precision).
-    agg_dict2 = {}
-    for c in tqdm(classes):
-        agg_df = concat_df.groupby("date").aggregate(weighted_means_by_column2, col_list, f"weights_{c}")
-        agg_dict2[f"class{c}"] = agg_df
+    agg_dict2 = aggregate_threshold(concat_df, classes, col_list, 
+                                    weighted_means_by_column2, min_pred)
     for key in agg_dict.keys():
         pd.testing.assert_frame_equal(agg_dict[key], agg_dict2[key])
     print("Test1: Successful! Weighted_avg function seems to yield the same as np.average.")
@@ -165,7 +193,7 @@ def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, class
     print("Test3: Successful! Aggregated 'pred' column is equal to the class in each month.")
     # Test4: If short and low portfolios are aggregated correctly.
     assert ((agg_dict_copy[f"class{classes[0]}"]["if_long_short"] == -1).all() and
-            (agg_dict_copy[f"class{classes[-1]}"]["if_long_short"] == 1).all()), ("Long "
+            (agg_dict_copy[f"class{longclass}"]["if_long_short"] == 1).all()), ("Long "
             "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
     print("Test4: Successful! Both the lowest class and the highest class corrrespond "
         "to -1 and 1 in the column 'if_long_short', respectively.")
@@ -177,7 +205,7 @@ def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, class
                 assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
                 if c==classes[0]:
                     assert (agg_dict_copy[f"class{c}"]["if_long_short"] == -1).all()
-                elif c==classes[-1]:
+                elif c==longclass:
                     assert (agg_dict_copy[f"class{c}"]["if_long_short"] == 1).all()
                 else:
                     assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
@@ -245,40 +273,43 @@ def export_latex(df: pd.DataFrame, path: Path) -> None:
         text_file.write(df.T.style.to_latex())
 
 
-def get_class_ignore_dates(concat_df: pd.DataFrame, classes: list) -> dict:
-    """For each class get months where there was no prediction for it at all
-    in the dataframe.
+def get_class_ignore_dates(agg_dict, classes: list, longclass: int) -> dict:
+    """For each class get months where the return of the aggreagted portfolio
+    is zero. This means that either there was no predicton for that class in that
+    month at all or the investment was not made for other reasons (too small of a 
+    diversified portfolio, i.e. to few predictions (below an arbitrary cutoff point)).
     
         Returns:
             class_ignore (dict): DatetimeIndeces for each class in a dictionary,
-                                 which did not have a prediction in a certain month.
+                                 which we were not invested in, in a certain month.
     """
     class_ignore = {}
     for c in classes:
-        sum_onehot = concat_df.groupby("date")[f"weights_{c}"].sum()
-        nr_months_noclass = sum_onehot[sum_onehot==0].count()
-        months_noclass = sum_onehot[sum_onehot==0].index #Datetimeindex of months.
-        if c == classes[0]: #short class, save month indeces to exlude.
-            if not nr_months_noclass:
-                print(f"Short Class {c} was predicted in every month.")
-            else:
-                print(f"Short Class {c}, was not predicted in the following {nr_months_noclass} months:", 
-                months_noclass.strftime("%Y-%m-%d").tolist())
-        elif c == classes[-1]: #long class, save month indeces to exclude.
-            if not nr_months_noclass:
-                print(f"Short Class {c} was predicted in every month.")
-            else:
-                print(f"Long Class {c} was not predicted in the following {nr_months_noclass} months:", 
-                months_noclass.strftime("%Y-%m-%d").tolist())
-        else: #remaining classes, just print info.
-            if not nr_months_noclass:
-                print(f"Class {c} was predicted in every month.")
-            else:
-                print(f"Class {c}, was not predicted in the following {nr_months_noclass} months:", 
-                months_noclass.strftime("%Y-%m-%d").tolist())
-        class_ignore[f"class{c}"] = months_noclass
+        opt_ret = agg_dict[f"class{c}"]["option_ret"]
+        months_no_inv = opt_ret[opt_ret == 0].index
+        print_info(classes, c, len(months_no_inv), months_no_inv, longclass) #print info to console.
+        class_ignore[f"class{c}"] = months_no_inv
     return class_ignore
 
+def print_info(classes, c, nr_months_no_inv, months_no_inv, longclass):
+    if c == classes[0]: #short class, save month indeces to exlude.
+        if not nr_months_no_inv:
+            print(f"Short Class {c} was invested in every month.")
+        else:
+            print(f"Short Class {c}, was not invested in the following {nr_months_no_inv} months:", 
+                months_no_inv.strftime("%Y-%m-%d").tolist())
+    elif c == longclass: #long class, save month indeces to exclude.
+        if not nr_months_no_inv:
+            print(f"Long Class {c} was invested in every month.")
+        else:
+            print(f"Long Class {c} was not invested in the following {nr_months_no_inv} months:", 
+                months_no_inv.strftime("%Y-%m-%d").tolist())
+    else: #remaining classes, just print info.
+        if not nr_months_no_inv:
+            print(f"Class {c} was invested in every month.")
+        else:
+            print(f"Class {c}, was not invested in the following {nr_months_no_inv} months:", 
+                months_no_inv.strftime("%Y-%m-%d").tolist())
 
 def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
     """Filters indeces of 'df' to align with index of 'df_target'.
@@ -399,6 +430,7 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.
     perfstats = pd.concat(perfstats, axis=1)
+    perfstats.columns.name = "Returns are Excess Returns" # Will fill upper left cell.
     perfstats.to_csv(path_results_perf/f"perfstats_{model_name}.csv")
     # dfi only accepts strings as paths.
     export_dfi(perfstats, str(path_results_perf/f"perfstats_{model_name}.png"))
