@@ -120,7 +120,7 @@ if __name__ == "__main__":
     # Set current working directory. Used in default --path_data.
     cwd = Path.cwd()
 
-    # Set general model agnostic hyperparams.
+    # General Model Agnostic Hyperparameters
     cockpit = parser.add_argument_group("Loop Configuration")
     cockpit.add_argument("--tag", type=str, default="")
     cockpit.add_argument("--seed", type=int, default=42)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     cockpit.add_argument("--no_predict", action="store_true") #default: predict
     cockpit.add_argument("--refit", action="store_true") #default: no refit
     cockpit.add_argument("--stresstest", action="store_true")
-    # Tune configuration
+    # Tune Configuration
     cockpit = parser.add_argument_group("Tune Configuration")
     cockpit.add_argument("--num_samples", type=int, default=30, help="How many "
                         "parameter configurations are sampled.")
@@ -153,7 +153,7 @@ if __name__ == "__main__":
     assert args.init_train_length + args.val_length + args.test_length <= 26, \
             ("(train + val + test) is bigger than total years in dataset (26).")
 
-    # Stress test with biggest dataset? CAREFUL: needs a lot of memory!
+    # Stress test with custom parameters (see above).
     if args.stresstest:
         add_stress_test_param(args)
 

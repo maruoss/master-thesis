@@ -14,6 +14,7 @@ import shutil
 from datamodule import Dataset
 from utils.logger import serialize_config
 from utils.helper import del_ckpts, set_tune_log_dir
+import ray
 
 
 
@@ -160,6 +161,10 @@ def xgb_tune(args, year_idx, time, ckpt_path, config: dict):
     val_year_end, loop_path, exp_path = \
         set_tune_log_dir(args, year_idx, time, search_space)
     
+    # Set _temp_dir to folder in same path as experiment, to have control over 
+    # disk space, as logging directory may grow considerably...
+    # See: https://docs.ray.io/en/latest/ray-core/configure.html#logging-and-debugging.
+    ray.init(_temp_dir=str(exp_path/"temp_ray"), ignore_reinit_error=True)
     analysis = tune.run(
         train_fn_with_parameters,
         local_dir=exp_path,
