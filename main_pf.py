@@ -20,7 +20,7 @@ from portfolio.helper_perf import (aggregate_threshold,
                                     get_and_check_min_max_pred, 
                                     get_class_ignore_dates, get_long_short_df, 
                                     save_performance_statistics, 
-                                    various_tests, 
+                                    various_tests, eqweight_per_stock, 
                                     weighted_means_by_column
                                     )
 from portfolio.helper_featureimp import (aggregate_newpred, 
@@ -115,7 +115,7 @@ def aggregate(args):
     print("Create weight columns for each class...")
     max_pred, min_prediction, classes = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     # 1.5x faster than pd.map...
-    condlist = [concat_df["pred"] == min_prediction, concat_df["pred"] == args.longclass]
+    condlist = [concat_df["pred"] == args.shortclass, concat_df["pred"] == args.longclass]
     choicelist = [-1, 1]
     no_alloc_value = 0
     concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
@@ -129,8 +129,21 @@ def aggregate(args):
     # Only calculate weighted average for numerical columns (have to drop 'date').
     col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
     print("Done.")
+    
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
+    # Add security id information to our data (needed for reweight and aggregate).
+    try:
+        secid = pd.read_csv(path_data/"secid.csv", index_col=0)
+    except FileNotFoundError as err:
+        raise FileNotFoundError("Make sure the file 'secid.csv' is in the "
+                                " '/data' subfolder.") from err
+    secid = filter_idx(secid, concat_df) #truncate first X years of training data.
+    concat_df = pd.concat([concat_df, secid], axis=1)
+    
+    # Reweight weights for options to be equally weighted within one stock.
+    concat_df = eqweight_per_stock(concat_df, classes) #takes about 90-120 secs...
+
     # Aggregate returns per month where there are at least 'min_pred' predictions 
     # made for that class in that month, otherwise return 0 for that month.
     agg_dict = aggregate_threshold(concat_df, 
@@ -144,7 +157,8 @@ def aggregate(args):
     # For each class print out months where no prediction was allocated for that class, 
     # and save these indeces for short and long class to later ignore the returns of 
     # these months.
-    class_ignore = get_class_ignore_dates(agg_dict, classes, longclass=args.longclass) #returns dict
+    class_ignore = get_class_ignore_dates(agg_dict, classes, 
+                                        longclass=args.longclass, shortclass=args.shortclass) #returns dict
     print("Done.")
     print("**************************************************************************")
     
@@ -154,7 +168,7 @@ def aggregate(args):
     print("***Check***")
     print("Sanity test the aggregated results...")
     various_tests(agg_dict, concat_df, col_list, classes, class_ignore, 
-                    min_pred=args.min_pred, longclass=args.longclass)
+                    min_pred=args.min_pred, longclass=args.longclass, shortclass=args.shortclass)
     print("Done.")
     print("***********")
     # Make sure tests did not alter dataframes.
@@ -167,7 +181,7 @@ def aggregate(args):
     # experiment directory 'exp_dir'.
     pf_dir = exp_dir/"portfolios"
     try: # raise error if 'portfolio' folder exists already
-        pf_dir.mkdir(exist_ok=False, parents=False) # raise error if parents are missing.
+        pf_dir.mkdir(exist_ok=True, parents=False) # raise error if parents are missing.
         for class_c, df in agg_dict.items():
             df.to_csv(pf_dir/f"{class_c}.csv")
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
@@ -177,8 +191,7 @@ def aggregate(args):
 
     print("Create Long Short Portfolio while ignoring months where one side "
         "is not allocated...")
-    shortclass = classes[0] #should be 0
-    assert shortclass == 0, "Class of short portfolio not 0. Check why."
+    shortclass = args.shortclass #default 0
     longclass = args.longclass
     print(f"Subtract Short portfolio (class {shortclass}) from Long portfolio "
             f"(class {longclass})...")
@@ -275,50 +288,53 @@ def performance(args):
     print("Done.")
 
     # Variable of interest (y). We want to explain the monthly long short PF returns.
-    long_short_pf_name = [col for col in pf_returns.columns if col.startswith("long")]
-    assert len(long_short_pf_name) == 1, ("More than one long-short portfolio in pf_returns/ portfolio path. "
-                                        "Regressions currently take only one target variable...")
-    long_short_pf_returns = pf_returns[long_short_pf_name]
+    long_short_pf_names = [col for col in pf_returns.columns if col.startswith("long")]
+    if len(long_short_pf_names) != 1: 
+        print("More than one long-short portfolio in pf_returns/ portfolio path. "
+            "Regressions currently take only one target variable. Will iterate "
+            "over them...")
+    for name in long_short_pf_names:
+        long_short_pf_returns = pf_returns[name]
 
-    # Align the months of the following dataframes with the long short dataframe.
-    list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
-    list_to_filter = [filter_idx(i, long_short_pf_returns) for i in list_to_filter]
+        # Align the months of the following dataframes with the long short dataframe.
+        list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
+        list_to_filter = [filter_idx(i, long_short_pf_returns) for i in list_to_filter]
 
-    # Unpack list to filter
-    vix_monthly, vvix_monthly, ff_monthly, mom_monthly = list_to_filter
-    # Concat all independent variables to regress them on the long short portfolio.
-    factors_avail = pd.concat([vix_monthly, vvix_monthly, ff_monthly, mom_monthly], axis=1)
-    # Columns: 'VIX', 'VVIX', 'Mkt-RF', 'SMB', 'HML', 'RMW', 'CMA', 'MOM'.
-    
-    # Perform several linear regressions with various factors and save results in
-    # results directory.
-    print("Perform linear regressions according to the CAPM, 3FF model and 5FF model "
-            "to try to explain the monthly long short portfolio returns...")
-    regression_map = {
-                    "CAPM": {  #folder in results where the below + stargazer latex will be saved.
-                    "CAPM":                 ["Mkt-RF"],
-                    "CAPM_MOM":             ["Mkt-RF", "MOM"],
-                    "CAPM_MOM_VIX":         ["Mkt-RF", "MOM", "VIX"],
-                    "CAPM_MOM_VIX_VVIX":    ["Mkt-RF", "MOM", "VIX", "VVIX"],
-                    },
-                    "3FF": {
-                    "3FF":                  ["Mkt-RF", "SMB", "HML"],
-                    "3FF_MOM":              ["Mkt-RF", "SMB", "HML", "MOM"],
-                    "3FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "MOM", "VIX"],
-                    "3FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "MOM", "VIX", "VVIX"],
-                    },
-                    "5FF": {  
-                    "5FF":                  ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
-                    "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
-                    "5FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX"],
-                    "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
-                    }
-    }
-    # Regress and save results of the regressions specified in regression_map on 
-    # long_short portfolio return.The regression groups get summarized via the stargazer package.
-    regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results)
-    print("Done.")
-    print("All done!")
+        # Unpack list to filter
+        vix_monthly, vvix_monthly, ff_monthly, mom_monthly = list_to_filter
+        # Concat all independent variables to regress them on the long short portfolio.
+        factors_avail = pd.concat([vix_monthly, vvix_monthly, ff_monthly, mom_monthly], axis=1)
+        # Columns: 'VIX', 'VVIX', 'Mkt-RF', 'SMB', 'HML', 'RMW', 'CMA', 'MOM'.
+        
+        # Perform several linear regressions with various factors and save results in
+        # results directory.
+        print("Perform linear regressions according to the CAPM, 3FF model and 5FF model "
+                "to try to explain the monthly long short portfolio returns...")
+        regression_map = {
+                        "CAPM": {  #folder in results where the below + stargazer latex will be saved.
+                        "CAPM":                 ["Mkt-RF"],
+                        "CAPM_MOM":             ["Mkt-RF", "MOM"],
+                        "CAPM_MOM_VIX":         ["Mkt-RF", "MOM", "VIX"],
+                        "CAPM_MOM_VIX_VVIX":    ["Mkt-RF", "MOM", "VIX", "VVIX"],
+                        },
+                        "3FF": {
+                        "3FF":                  ["Mkt-RF", "SMB", "HML"],
+                        "3FF_MOM":              ["Mkt-RF", "SMB", "HML", "MOM"],
+                        "3FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "MOM", "VIX"],
+                        "3FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "MOM", "VIX", "VVIX"],
+                        },
+                        "5FF": {  
+                        "5FF":                  ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
+                        "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
+                        "5FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX"],
+                        "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
+                        }
+        }
+        # Regress and save results of the regressions specified in regression_map on 
+        # long_short portfolio return.The regression groups get summarized via the stargazer package.
+        regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results/name)
+        print("Done.")
+        print("All done!")
 
 
 def feature_importance(args):
@@ -359,13 +375,14 @@ def feature_importance(args):
     features_list.remove("date")
     features_list.remove("option_ret")
     # How many sample permutation per feature?
-    num_samples_per_feature = 30 #has to be > 1, otherwise error in ols val_bal_acc.
+    num_samples_per_feature = 20 #has to be > 1, otherwise error in ols val_bal_acc.
     # Original long short monthly pf returns?
     path_portfolios = exp_path/"portfolios"
     if int(args_exp.label_fn[-1:]) == 5: # 5 class classification.
         # Note: pd.read_csv does not load 'date' column as datetime automatically, 
         # in contrast to pd.read_parquet!
-        long_short_pf = pd.read_csv(path_portfolios/"long4short0.csv", parse_dates=["date"], index_col="date")
+        filename = f"long{args.longclass}short{args.shortclass}.csv"
+        long_short_pf = pd.read_csv(path_portfolios/filename, parse_dates=["date"], index_col="date")
         long_short_pf_ret_orig = long_short_pf["option_ret"]
     else:
         raise NotImplementedError("Feature randomization only implemented for "
@@ -373,10 +390,12 @@ def feature_importance(args):
     # Aggregate original optionreturns to sanity check long_short portfolio returns.
     test = orig_feature_target[["date", "option_ret"]].copy()
     check_orig = aggregate_newpred(preds_orig, test, args_exp, 
-                                    longclass=args.longclass, min_pred=args.min_pred)
+                                    longclass=args.longclass,
+                                    shortclass=args.shortclass,
+                                    min_pred=args.min_pred)
     assert (abs(long_short_pf_ret_orig - check_orig) < 0.00001).all(), ("Loaded "
     "aggregated option returns have substantial differences to the check aggregation of the "
-    "original option returns. Maybe longclass or min_pred are different?")
+    "original option returns. Maybe longclass, min_pred or option weightings are different?")
     # ****
 
     results = loop_features(
@@ -425,7 +444,7 @@ def loop_features(
                 long_short_pf_ret_orig: pd.Series,
                 ) -> pd.DataFrame:
     results = {}
-    for feature in tqdm(features_list): # approx. 22sec per feature per sample.
+    for feature in tqdm(features_list): #if eqweight_per_stock is used takes about 3min per loop.
         bal_acc_scores = {} #list
         ls_ret_avg_ols = {} #dict of list
         for _ in range(num_samples_per_feature):
@@ -546,6 +565,7 @@ def loop_years(
     ls_pf_ret_new = aggregate_newpred(preds_perm, option_ret_to_agg, 
                                     args_exp,
                                     longclass=args.longclass,
+                                    shortclass=args.shortclass,
                                     min_pred=args.min_pred)
     ls_pf_ret_diff = long_short_pf_ret_orig - ls_pf_ret_new.values
     ls_pf_ret_diff_mean = ls_pf_ret_diff.mean()
@@ -574,7 +594,8 @@ if __name__ == "__main__":
     parser_agg = subparsers.add_parser("agg")
     parser_agg.set_defaults(mode=aggregate)
     parser_agg.add_argument("--longclass", type=int)
-    parser_agg.add_argument("--min_pred", type=int, default=0,
+    parser_agg.add_argument("--shortclass", type=int, default=0)
+    parser_agg.add_argument("--min_pred", type=int, default=20,
                             help="The minimum number of predictions in each portfolio")
     # Assuming shortclass is always the 0 prediction PF.
     # 2.a) Performance evaluation of portfolios created with 'agg'.
@@ -584,7 +605,8 @@ if __name__ == "__main__":
     parser_impt = subparsers.add_parser("importance")
     parser_impt.set_defaults(mode=feature_importance)
     parser_impt.add_argument("--longclass", type=int)
-    parser_impt.add_argument("--min_pred", type=int, default=0,
+    parser_impt.add_argument("--shortclass", type=int, default=0)
+    parser_impt.add_argument("--min_pred", type=int, default=20,
                              help="The minimum number of predictions in each portfolio")
     # Overhead Settings.
     cockpit = parser.add_argument_group("Overhead Configuration")

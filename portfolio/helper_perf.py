@@ -128,17 +128,40 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
 
 
 def aggregate_threshold(concat_df, classes, col_list, agg_func, min_pred: int):
+    """Aggregates option returns per month and per weight to monthly portfolio
+    returns. Filters for minimum options (min_pred) per month and 
+    minimum stocks per month (fixed to be 10)."""
     agg_dict = {}
-    for c in classes:
+    for c in tqdm(classes):
+        # Aggregate weightings
         agg_df = concat_df.groupby("date").aggregate(agg_func, col_list, f"weights_{c}")
-        count = concat_df.groupby("date")[f"weights_{c}"].aggregate("sum")
-        # length = concat_df.groupby("date")[f"weights_{c}"].aggregate(lambda x: len(x))
-        # length2 = concat_df.groupby("date")[f"weights_{c}"].aggregate("count")
-        # pct = concat_df.groupby("date")[f"weights_{c}"].aggregate(lambda x: sum(x) / len(x))
-        # SET INVESTMENT TO ZERO BELOW CERTAIN CUTOFF OF # PREDICTIONS
-        agg_df = agg_df.where(count > min_pred, 0) 
+        # Count options per month (cant just sum weights since they are not all 1 anymore).
+        count = concat_df.groupby("date")[f"weights_{c}"].aggregate(lambda x: sum(x != 0))
+        # Count stocks per month.
+        uniq_sec =  concat_df.groupby(["date"])\
+                    .apply(lambda x: len(x.loc[x[f"weights_{c}"] != 0, "secid"].unique()))
+        
+        # Set returns to 0 that do not fulfill min. conditions.
+        # Minimum options per month: min_pred.
+        # Minimum stocks per month: 10 (fixed)
+        agg_df = agg_df.where((count > min_pred) & (uniq_sec > 10), 0)
+
         agg_dict[f"class{c}"] = agg_df
     return agg_dict
+
+
+def eqweight_per_stock(concat_df, classes: list):
+    """Reweights each weight of 1 per option to 1/(number of options per stock
+    in that month)."""
+    # def weight_per_sec(row, df): return 1/sum(row["secid"] == df["secid"])
+    # def wrapper(df, function): return df.apply(function, df=df, axis=1)
+    for c in tqdm(classes):
+        # new_weights = concat_df.loc[concat_df[f"weights_{c}"]==1, ["date", f"weights_{c}", "secid"]].groupby("date").apply(wrapper, function=weight_per_sec)
+        # concat_df.loc[concat_df[f"weights_{c}"]==1, f"weights_{c}"] = new_weights.values
+        concat_df.loc[concat_df[f"weights_{c}"]==1, f"weights_{c}"] = \
+        concat_df.loc[concat_df[f"weights_{c}"]==1, ["date", f"weights_{c}", "secid"]]\
+                 .groupby(["date", "secid"]).transform(lambda x: x/ x.count())
+    return concat_df
 
 
 def get_long_short_df(agg_dict, classes, class_ignore, shortclass, longclass):
@@ -149,15 +172,15 @@ def get_long_short_df(agg_dict, classes, class_ignore, shortclass, longclass):
     long_df.loc[months_no_inv, :] = 0
     short_df.loc[months_no_inv, :] = 0
     long_short_df = long_df - short_df #months that are 0 in both dfs stay 0 everywhere.
-    assert ((long_short_df.drop(months_no_inv)["pred"] == (longclass - shortclass)).all() and #'pred' should be long_class - short_class
+    assert ((abs(long_short_df.drop(months_no_inv)["pred"] - (longclass - shortclass)) < 0.000000001).all() and #'pred' should be long_class - short_class
         (long_short_df.drop(months_no_inv)["if_long_short"] == 2).all()) #'if_long_short' should be 2 (1 - (-1) = 2)
-    print(f"Summary: In {len(months_no_inv)} months or in {len(months_no_inv)/len(long_short_df):.2%} "
+    print(f"Summary: In {len(months_no_inv)} months or {len(months_no_inv)/len(long_short_df):.2%} "
         f"of the total {len(long_short_df)} months there has not been made a long-short investment.")
     return long_short_df
 
 
 def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, classes: list, 
-                    class_ignore: dict, min_pred: int, longclass: int):
+                    class_ignore: dict, min_pred: int, longclass: int, shortclass: int):
     """Perform various sanity checks on our monthly aggregated results in agg_dict."""
     # Test1: Compare agg_dict with agg_dict2, calculated via 'weighted_avg' function 
     # and not via 'np.average'. They should yield the same (up to small precision).
@@ -189,10 +212,10 @@ def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, class
 
     # Test3: If "pred" column in aggregated df's corresponds to class in each row (month).
     for c in classes:
-        assert (agg_dict_copy[f"class{c}"]["pred"] == c).all(), "Aggregated 'pred' is not equal to the class in at least one month."
+        assert (abs(agg_dict_copy[f"class{c}"]["pred"] - c) < 0.000000001).all(), "Aggregated 'pred' is not equal to the class in at least one month."
     print("Test3: Successful! Aggregated 'pred' column is equal to the class in each month.")
     # Test4: If short and low portfolios are aggregated correctly.
-    assert ((agg_dict_copy[f"class{classes[0]}"]["if_long_short"] == -1).all() and
+    assert ((agg_dict_copy[f"class{shortclass}"]["if_long_short"] == -1).all() and
             (agg_dict_copy[f"class{longclass}"]["if_long_short"] == 1).all()), ("Long "
             "or short portfolio aggregation does not yield 1 or -1 in 'if_long_short' column.")
     print("Test4: Successful! Both the lowest class and the highest class corrrespond "
@@ -201,14 +224,13 @@ def various_tests(agg_dict: dict, concat_df: pd.DataFrame, col_list: list, class
     for c in classes:
         for k in classes:
             if c == k:
-                assert (agg_dict_copy[f"class{c}"][f"weights_{k}"] == 1).all()
-                assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
-                if c==classes[0]:
+                # Comment out: Weights are not all 1 anymore (are divided by num 
+                # of options per stock).
+                # assert (agg_dict_copy[f"class{c}"][f"weights_{k}"] == 1).all()
+                if c==shortclass:
                     assert (agg_dict_copy[f"class{c}"]["if_long_short"] == -1).all()
                 elif c==longclass:
                     assert (agg_dict_copy[f"class{c}"]["if_long_short"] == 1).all()
-                else:
-                    assert (agg_dict_copy[f"class{c}"]["pred"] == k).all()
             else:
                 assert (agg_dict_copy[f"class{c}"][f"weights_{k}"] == 0).all()
     print("Test5: Successful! Check whether one-hot encoding columns make sense "
@@ -273,7 +295,10 @@ def export_latex(df: pd.DataFrame, path: Path) -> None:
         text_file.write(df.T.style.to_latex())
 
 
-def get_class_ignore_dates(agg_dict, classes: list, longclass: int) -> dict:
+def get_class_ignore_dates(agg_dict, 
+                            classes: list, 
+                            longclass: int,
+                            shortclass: int) -> dict:
     """For each class get months where the return of the aggreagted portfolio
     is zero. This means that either there was no predicton for that class in that
     month at all or the investment was not made for other reasons (too small of a 
@@ -287,12 +312,13 @@ def get_class_ignore_dates(agg_dict, classes: list, longclass: int) -> dict:
     for c in classes:
         opt_ret = agg_dict[f"class{c}"]["option_ret"]
         months_no_inv = opt_ret[opt_ret == 0].index
-        print_info(classes, c, len(months_no_inv), months_no_inv, longclass) #print info to console.
+        print_info(classes, c, len(months_no_inv), months_no_inv, 
+                    longclass, shortclass) #print info to console.
         class_ignore[f"class{c}"] = months_no_inv
     return class_ignore
 
-def print_info(classes, c, nr_months_no_inv, months_no_inv, longclass):
-    if c == classes[0]: #short class, save month indeces to exlude.
+def print_info(classes, c, nr_months_no_inv, months_no_inv, longclass, shortclass):
+    if c == shortclass: #short class, save month indeces to exlude.
         if not nr_months_no_inv:
             print(f"Short Class {c} was invested in every month.")
         else:
@@ -310,6 +336,7 @@ def print_info(classes, c, nr_months_no_inv, months_no_inv, longclass):
         else:
             print(f"Class {c}, was not invested in the following {nr_months_no_inv} months:", 
                 months_no_inv.strftime("%Y-%m-%d").tolist())
+
 
 def filter_idx(df: pd.DataFrame, df_target: pd.DataFrame) -> pd.DataFrame:
     """Filters indeces of 'df' to align with index of 'df_target'.
@@ -363,10 +390,10 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     vol_ann_str = vol_ann.apply(to_pct_string).rename("Volatility (ann.)")
     # Annualized Sharpe Ratio.
     sharpe_ann = mean_ann / vol_ann
-    sharpe_ann_str = sharpe_ann.apply(lambda x: f'{x: .3f}').rename("Sharpe Ratio (ann.)")
+    sharpe_ann_str = sharpe_ann.apply(lambda x: f'{x: .3f}').rename("SR (ann.)")
     # Geometric annualized Sharpe Ratio
     sharpe_ann_geom = cagr / vol_ann
-    sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. Sharpe Ratio (ann.)")
+    sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. SR (ann.)")
     # Calculate alpha and beta w.r.t. FF Excess Market return.
     print("Load the Market Excess return from the 5 Fama French Factors Dataset...")
     # Skip first two rows (text description) and omit yearly data (after row 706).
@@ -422,15 +449,17 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     skew_str = skew.apply(lambda x: f'{x: .3f}').rename("Skewness")
     kurt = pf_returns.kurtosis()
     kurt_str = kurt.apply(lambda x: f'{x: .3f}').rename("Kurtosis")
+    # Months no inv.
+    months_noinv = (pf_returns==0).sum(axis=0).rename("No Inv.")
     # Collect perfstats "strings" (better for saving/ formatting?).
     perfstats += [cumr_str, cagr_str, mean_str, mean_signif_series, mean_ann_str, vol_ann_str, sharpe_ann_str, 
-                sharpe_ann_geom_str, maxdd_str, maxdd_days_str, calmar_str, skew_str, 
+                sharpe_ann_geom_str, months_noinv, maxdd_str, maxdd_days_str, calmar_str, skew_str, 
                 kurt_str, alphas_ann_str, alphas_str, alpha_signif_df, betas_str, beta_signif_df
                 ]
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.
     perfstats = pd.concat(perfstats, axis=1)
-    perfstats.columns.name = "Returns are Excess Returns" # Will fill upper left cell.
+    perfstats.columns.name = f"{len(pf_returns)} Monthly Exc. Ret. ({pf_returns.index[0].strftime('%m/%y')} - {pf_returns.index[-1].strftime('%m/%y')})" # Will fill upper left cell.
     perfstats.to_csv(path_results_perf/f"perfstats_{model_name}.csv")
     # dfi only accepts strings as paths.
     export_dfi(perfstats, str(path_results_perf/f"perfstats_{model_name}.png"))

@@ -13,7 +13,7 @@ from datamodule import DataModule, Dataset
 from model.neuralnetwork import FFN
 from model.transformer import TransformerEncoder
 from portfolio.helper_ols import regress_on_constant
-from portfolio.helper_perf import aggregate_threshold, check_eoy, get_and_check_min_max_pred, get_class_ignore_dates, get_long_short_df, various_tests, weighted_means_by_column
+from portfolio.helper_perf import aggregate_threshold, check_eoy, eqweight_per_stock, filter_idx, get_and_check_min_max_pred, get_class_ignore_dates, get_long_short_df, various_tests, weighted_means_by_column
 from utils.preprocess import YearMonthEndIndeces, binary_categorize, multi_categorize
 
 
@@ -91,6 +91,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
                     option_ret_to_agg: pd.DataFrame, # Is used for the data aggregation/ indeces check.
                     args_exp: pd.Series,
                     longclass: int,
+                    shortclass: int,
                     min_pred: int,
                     ) -> pd.Series:
     """Aggregate orig_feature_df into class portfolios depending on the predictions 
@@ -125,7 +126,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     print("Create weight columns for each class...")
     max_pred, min_prediction, classes = get_and_check_min_max_pred(concat_df, args_exp["label_fn"])
     # 1.5x faster than pd.map...
-    condlist = [concat_df["pred"] == min_prediction, concat_df["pred"] == longclass]
+    condlist = [concat_df["pred"] == shortclass, concat_df["pred"] == longclass]
     choicelist = [-1, 1]
     no_alloc_value = 0
     concat_df["if_long_short"] = np.select(condlist, choicelist, no_alloc_value)
@@ -141,6 +142,20 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     print("Done.")
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
+
+    # Add security id information to our data (needed for reweight and aggregate).
+    path_data = Path.cwd()/"data"
+    try:
+        secid = pd.read_csv(path_data/"secid.csv", index_col=0)
+    except FileNotFoundError as err:
+        raise FileNotFoundError("Make sure the file 'secid.csv' is in the "
+                                " '/data' subfolder.") from err
+    secid = filter_idx(secid, concat_df) #truncate first X years of training data.
+    concat_df = pd.concat([concat_df, secid], axis=1)
+    
+    # # Reweight weights for options to be equally weighted within one stock.
+    concat_df = eqweight_per_stock(concat_df, classes) #takes about 90-120 secs...
+
     # Aggregate returns per month where there are at least 'min_pred' predictions 
     # made for that class in that month, otherwise return 0 for that month.
     agg_dict = aggregate_threshold(
@@ -155,7 +170,8 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     # For each class print out months where no prediction was allocated for that class, 
     # and save these indeces for short and long class to later ignore the returns of 
     # these months.
-    class_ignore = get_class_ignore_dates(agg_dict, classes, longclass=longclass) #returns dict
+    class_ignore = get_class_ignore_dates(agg_dict, classes, 
+                                        longclass=longclass, shortclass=shortclass) #returns dict
     print("Done.")
     
     # Perform various tests to check our calculations.
@@ -163,7 +179,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     test_agg_dict = agg_dict.copy()
     print("***Sanity test the aggregated results...***")
     various_tests(agg_dict, concat_df, col_list, classes, class_ignore, 
-                    min_pred=min_pred, longclass=longclass)
+                    min_pred=min_pred, longclass=longclass, shortclass=shortclass)
     # Make sure tests did not alter dataframes.
     pd.testing.assert_frame_equal(test_concat, concat_df)
     for c in classes:
@@ -173,8 +189,6 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
 
     print("Create Long Short Portfolio while ignoring months where one side "
         "is not allocated...")
-    shortclass = classes[0] #should be 0
-    assert shortclass == 0, "Class of short portfolio not 0. Check why."
     print(f"Subtract Short portfolio (class {shortclass}) from Long portfolio "
             f"(class {longclass})...")
     # Long-Short PF (highest class (long) - lowest class (short))
