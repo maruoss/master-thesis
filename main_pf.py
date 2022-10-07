@@ -81,10 +81,6 @@ def aggregate(args):
     # Get args from experiment.
     # Alternatively: Load json with json.load() and convert dict/list to df.
     args_exp = pd.read_json(exp_dir/"args.json", typ="series") # series, NOT a dict.
-    # If longclass was not specified in CLI, take max possible class to predict.
-    if not args.longclass:
-        d = vars(args)
-        d["longclass"] = int(args_exp["label_fn"][-1]) - 1 #not implemented with 'binary' yet.
     # Get start of year index and all end of month indeces. Load with args that 
     # were used in the actual experiment.
     eoy_indeces, eom_indeces = YearMonthEndIndeces(
@@ -293,8 +289,8 @@ def performance(args):
         print("More than one long-short portfolio in pf_returns/ portfolio path. "
             "Regressions currently take only one target variable. Will iterate "
             "over them...")
-    for name in long_short_pf_names:
-        long_short_pf_returns = pf_returns[name]
+    for ls_name in long_short_pf_names:
+        long_short_pf_returns = pf_returns[ls_name]
 
         # Align the months of the following dataframes with the long short dataframe.
         list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
@@ -332,7 +328,7 @@ def performance(args):
         }
         # Regress and save results of the regressions specified in regression_map on 
         # long_short portfolio return.The regression groups get summarized via the stargazer package.
-        regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results/name)
+        regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results/ls_name)
         print("Done.")
         print("All done!")
 
@@ -356,10 +352,6 @@ def feature_importance(args):
     exp_path = matches_list[0]
     # Get experiment args.
     args_exp = pd.read_json(exp_path/"args.json", typ="series")
-    # If longclass was not specified in CLI, take max possible class to predict.
-    if not args.longclass:
-        d = vars(args)
-        d["longclass"] = int(args_exp["label_fn"][-1]) - 1 #not implemented with 'binary' yet.
     # Get original predictions.
     preds_orig = pd.read_csv(exp_path/"all_pred.csv", index_col=0) #shape [index, cols: ["id", "pred"]]
     # Get (year_idx, best_model_path) for each year into a list.
@@ -375,7 +367,7 @@ def feature_importance(args):
     features_list.remove("date")
     features_list.remove("option_ret")
     # How many sample permutation per feature?
-    num_samples_per_feature = 20 #has to be > 1, otherwise error in ols val_bal_acc.
+    num_samples_per_feature = args.num_samples #has to be > 1, otherwise error in ols val_bal_acc.
     # Original long short monthly pf returns?
     path_portfolios = exp_path/"portfolios"
     if int(args_exp.label_fn[-1:]) == 5: # 5 class classification.
@@ -422,7 +414,8 @@ def feature_importance(args):
     results_sorted_meanofmeandiffpf_df_onlysignif = prepare_to_save(results_sorted_meanofmeandiffpf, only_signif=True)
 
     #Save sorted results (once only significance, once with full ols results).
-    path_importance = exp_path/"results"/"importance"
+    ls_name = f"long{args.longclass}short{args.shortclass}"
+    path_importance = exp_path/"results"/ls_name/"importance"
     path_importance.mkdir(exist_ok=True, parents=True)
     results_sorted_balacc_df.to_csv(path_importance/"balaccmeandiff_sorted_details.csv")
     results_sorted_balacc_df_onlysignif.to_csv(path_importance/"balaccmeandiff_sorted.csv")
@@ -430,7 +423,10 @@ def feature_importance(args):
     results_sorted_meanofmeandiffpf_df_onlysignif.to_csv(path_importance/"meanofmeandiffpf_sorted.csv")
 
     end_time = time.time()
-    print("Finished. Feature importance completed in", end_time - start_time, "seconds.")
+    print(f"Finished feature importance with the below specs...\nmodel: {args_exp.model}"
+        f"\ndataset: {args_exp.dataset}\nnum_features: {len(features_list)}"
+        f"\nnum_samples: {args.num_samples}\nlongclass: {args.longclass}\nshortclass: {args.shortclass}"
+        f"\n...in", end_time - start_time, "seconds.")
 
 
 def loop_features(
@@ -593,10 +589,11 @@ if __name__ == "__main__":
     # 1. Aggregate returns via predictions to portfolios.
     parser_agg = subparsers.add_parser("agg")
     parser_agg.set_defaults(mode=aggregate)
-    parser_agg.add_argument("--longclass", type=int)
-    parser_agg.add_argument("--shortclass", type=int, default=0)
+    parser_agg.add_argument("--longclass", type=int, default=3)
+    parser_agg.add_argument("--shortclass", type=int, default=1)
     parser_agg.add_argument("--min_pred", type=int, default=20,
                             help="The minimum number of predictions in each portfolio")
+    # Default at least 10 stock ids per month (min secid).
     # Assuming shortclass is always the 0 prediction PF.
     # 2.a) Performance evaluation of portfolios created with 'agg'.
     parser_perf = subparsers.add_parser("perf")
@@ -604,10 +601,12 @@ if __name__ == "__main__":
     # 2.b) Feature Importance (needs 'agg' to be done first).
     parser_impt = subparsers.add_parser("importance")
     parser_impt.set_defaults(mode=feature_importance)
-    parser_impt.add_argument("--longclass", type=int)
-    parser_impt.add_argument("--shortclass", type=int, default=0)
+    parser_impt.add_argument("--longclass", type=int, default=3)
+    parser_impt.add_argument("--shortclass", type=int, default=1)
     parser_impt.add_argument("--min_pred", type=int, default=20,
                              help="The minimum number of predictions in each portfolio")
+    # Default at least 10 stock ids per month (min secid).
+    parser_impt.add_argument("--num_samples", type=int, default=20)
     # Overhead Settings.
     cockpit = parser.add_argument_group("Overhead Configuration")
     cockpit.add_argument("expid", type=str, help="folder name of experiment, "
