@@ -63,11 +63,11 @@ class TransformerEncoder(pl.LightningModule):
             self.class_weights = self.class_weights.cuda() # Move to cuda, otherwise mismatch of devices # in train/val
         else:
             self.class_weights = None
-        print("---")
-        print("class_weights:", self.class_weights)
-        print("device of class_weights:", self.class_weights.device)
-        print("device of class:", self.device)
-        print("---")
+        # print("---")
+        # print("class_weights:", self.class_weights)
+        # print("device of class_weights:", self.class_weights.device)
+        # print("device of class:", self.device)
+        # print("---")
 
         #metrics
         self.train_acc = torchmetrics.Accuracy()

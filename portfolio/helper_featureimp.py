@@ -82,7 +82,8 @@ def check_y_classification(y: np.array, orig_feature_target: pd.DataFrame, label
     else:
         raise ValueError("Specify label_fn as either 'binary' or 'multi'")
     if (len(y) == len(y_orig)) and ((y == y_orig.values).all()):
-        print("y_new_year target vector seems to be correct.")
+        # print("y_new_year target vector seems to be correct.")
+        pass
     else:
         raise ValueError("'y_orig' and 'y_new_year' do not have equal values.")
 
@@ -119,7 +120,6 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     assert check_eoy(concat_df, eoy_indeces), ("Id 0 and eoy indeces do not match.")
     # Set df_small index back to main index.
     concat_df = concat_df.set_index("index", drop=True)
-    print("Done.")
 
     # Create single weight column 'if_long_short' with -1 for lowest and 1 for 
     # highest predicted class. Rest is 0.
@@ -139,7 +139,7 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
 
     # Only calculate weighted average for numerical columns (have to drop 'date').
     col_list = [val for val in concat_df.columns.tolist() if "date" not in val]
-    print("Done.")
+
     # Aggregate and collect all portfolios in a dictionary with key 'class0', 'class1', etc.
     print("Aggregate for each class and collect the dataframes...")
 
@@ -164,7 +164,6 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
                                 col_list=col_list, 
                                 agg_func=weighted_means_by_column,
                                 min_pred=min_pred)
-    print("Done.")
     
     print("Which classes were not invested in at all in the respective month?...")
     # For each class print out months where no prediction was allocated for that class, 
@@ -172,7 +171,6 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     # these months.
     class_ignore = get_class_ignore_dates(agg_dict, classes, 
                                         longclass=longclass, shortclass=shortclass) #returns dict
-    print("Done.")
     
     # Perform various tests to check our calculations.
     test_concat = concat_df.copy()
@@ -184,7 +182,6 @@ def aggregate_newpred(preds_concat_df: pd.DataFrame,
     pd.testing.assert_frame_equal(test_concat, concat_df)
     for c in classes:
         pd.testing.assert_frame_equal(test_agg_dict[f"class{c}"], agg_dict[f"class{c}"])
-    print("Done.")
     print("********************************************")
 
     print("Create Long Short Portfolio while ignoring months where one side "
@@ -209,9 +206,9 @@ def pred_on_data(
     if model_name in ["nn", "transformer"]:
         # If small dataset can predict in one go, otherwise make batchsize smaller.
         if args_exp.dataset == "small":
-            batch_size = 10000 #transformer needs small(er) batch size here as well.
+            batch_size = 512 #transformer needs small(er) batch size here as well.
         else:
-            batch_size = 1000
+            batch_size = 512
         if model_name == "nn":
             model = FFN.load_from_checkpoint(bestmodelpath)
         elif model_name == "transformer":

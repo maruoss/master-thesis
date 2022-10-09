@@ -423,9 +423,10 @@ def feature_importance(args):
     results_sorted_meanofmeandiffpf_df_onlysignif.to_csv(path_importance/"meanofmeandiffpf_sorted.csv")
 
     end_time = time.time()
-    print(f"Finished feature importance with the below specs...\nmodel: {args_exp.model}"
-        f"\ndataset: {args_exp.dataset}\nnum_features: {len(features_list)}"
-        f"\nnum_samples: {args.num_samples}\nlongclass: {args.longclass}\nshortclass: {args.shortclass}"
+    print("**********************************************************************************")
+    print(f"Finished feature importance with the below specs...\nmodel:\t\t{args_exp.model}"
+        f"\ndataset:\t{args_exp.dataset}\nnum_features:\t{len(features_list)}"
+        f"\nnum_samples:\t{args.num_samples}\nlongclass:\t{args.longclass}\nshortclass:\t{args.shortclass}"
         f"\n...in", end_time - start_time, "seconds.")
 
 
@@ -440,14 +441,17 @@ def loop_features(
                 long_short_pf_ret_orig: pd.Series,
                 ) -> pd.DataFrame:
     results = {}
-    for feature in tqdm(features_list): #if eqweight_per_stock is used takes about 3min per loop.
+    for feature_idx, feature in enumerate(tqdm(features_list)): #if eqweight_per_stock is used takes about 3min per loop.
         bal_acc_scores = {} #list
         ls_ret_avg_ols = {} #dict of list
-        for _ in range(num_samples_per_feature):
+        for i in range(num_samples_per_feature):
             result = loop_years(
                                 args=args,
                                 orig_feature_target=orig_feature_target,
+                                sample_idx=i,
                                 feature=feature,
+                                feature_idx=feature_idx,
+                                length_features=len(features_list),
                                 yearidx_bestmodelpaths=yearidx_bestmodelpaths,
                                 preds_orig=preds_orig,
                                 args_exp=args_exp,
@@ -505,13 +509,18 @@ def loop_features(
 def loop_years(
             args,
             orig_feature_target: pd.DataFrame,
+            sample_idx: int,
             feature: str,
+            feature_idx: int,
+            length_features: int,
             yearidx_bestmodelpaths: list,
             preds_orig: pd.DataFrame,
             args_exp: pd.Series,
             long_short_pf_ret_orig: pd.Series,
             ) -> Dict[List[float], List[float]]: # (mean of monthly difference, t-value), (difference bal_acc score)
-    
+    print("*******************************************************************************************************")
+    print(f"START Loop {sample_idx+1}/{args.num_samples} of feature '{feature}' ({feature_idx+1}/{length_features}).")
+
     # Permute feature.
     permuted_feature_target = orig_feature_target.copy()
     permuted_feature_target[feature] = np.random.permutation(permuted_feature_target[feature])
@@ -523,6 +532,7 @@ def loop_years(
     preds_perm_list = []
     preds_dummy_list = []
     for yearidx, bestmodelpath in yearidx_bestmodelpaths: #should be in ascending order.
+        print("---")
         print(f"Loading trained model: '{model_name}' to predict on randomized feature from path: {bestmodelpath}")
         preds_perm_year, preds_dummy_year, y = pred_on_data(model_name, yearidx, bestmodelpath, 
                                                             permuted_feature_target, args_exp)
@@ -558,6 +568,12 @@ def loop_years(
     # Perform aggregation for new predictions.
     # Aggregate preds after randomizing a feature.
     option_ret_to_agg = orig_feature_target[["date", "option_ret"]]
+
+    #Info output.
+    print("***********************************************************************************************")
+    print(f"PROGRESS INFO: Sample {sample_idx+1}/{args.num_samples} of feature '{feature}' ({feature_idx+1}/{length_features}).")
+    print("***********************************************************************************************")
+
     ls_pf_ret_new = aggregate_newpred(preds_perm, option_ret_to_agg, 
                                     args_exp,
                                     longclass=args.longclass,

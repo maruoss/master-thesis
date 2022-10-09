@@ -113,8 +113,8 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     assert min_theor == min_real, (
         "Not a single month has the prediction of the theoretical minimum class.")
     months_no_min = min_real_series[min_real_series != min_real].count()
-    print(f"Number of months where lowest class {min_real} is not predicted:", 
-            months_no_min, "out of", f"{len(min_real_series)}.")
+    # print(f"Number of months where lowest class {min_real} is not predicted:", 
+    #         months_no_min, "out of", f"{len(min_real_series)}.")
     # Max pred value realized per month.
     max_real_series = concat_df.groupby("date")["pred"].max()
     max_real = max_real_series.max()
@@ -122,8 +122,8 @@ def get_and_check_min_max_pred(concat_df: pd.DataFrame, labelfn_exp: str):
     assert max_theor == max_real, (
         "Not a single month has the prediction of the theoretical maximum class.")
     months_no_max = max_real_series[max_real_series != max_real].count()
-    print(f"Number of months where largest class {max_real} is not predicted:", 
-            months_no_max, "out of", f"{len(max_real_series)}.")
+    # print(f"Number of months where largest class {max_real} is not predicted:", 
+    #         months_no_max, "out of", f"{len(max_real_series)}.")
     return max_real, min_real, classes
 
 
