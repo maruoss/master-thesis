@@ -378,7 +378,7 @@ def feature_importance(args):
         long_short_pf_ret_orig = long_short_pf["option_ret"]
     else:
         raise NotImplementedError("Feature randomization only implemented for "
-                                  "5 class classification for now")
+                                  "5 class classification for now.")
     # Aggregate original optionreturns to sanity check long_short portfolio returns.
     test = orig_feature_target[["date", "option_ret"]].copy()
     check_orig = aggregate_newpred(preds_orig, test, args_exp, 

@@ -401,7 +401,7 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Filter months (rows) to align with pf_returns.
     mkt_excess_ret_monthly = filter_idx(mkt_excess_ret_monthly, pf_returns)
     print("Done.")
-    # Perform linear regression (no HAC adjustment) (alpha then annualized).
+    # Perform linear regression (alpha then annualized).
     # Convert DataFrame to Series, so that X has correct shape.
     mkt_excess_ret_monthly = mkt_excess_ret_monthly.squeeze()
     # Create X as [[1., 1., ..., 1.].T, [mkt_excess_ret].T] (with intercept).
