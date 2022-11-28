@@ -394,6 +394,24 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Geometric annualized Sharpe Ratio
     sharpe_ann_geom = cagr / vol_ann
     sharpe_ann_geom_str = sharpe_ann_geom.apply(lambda x: f'{x: .3f}').rename("Geom. SR (ann.)")
+    # Columnwise apply.
+    # Sortino adjusted
+    sortino_adj_ann = pf_returns.apply(qs.stats.adjusted_sortino, periods=12, annualize=True)
+    sortino_adj_ann_str = sortino_adj_ann.apply(lambda x: f'{x: .3f}').rename("Adj. Sortino (ann.)")
+    # Omega ratio
+    def omega_ratio(returns, return_threshold=0.0):
+        return_less_thresh = returns - return_threshold
+        
+        numer = sum(return_less_thresh[return_less_thresh > 0.0])
+        denom = -1.0 * sum(return_less_thresh[return_less_thresh < 0.0])
+        
+        if denom > 0.0:
+            return numer/denom
+        else:
+            return np.nan
+    omega_ann = pf_returns.apply(omega_ratio)
+    omega_ann_str = omega_ann.apply(lambda x: f'{x: .3f}').rename("Omega ratio")
+
     # Calculate alpha and beta w.r.t. FF Excess Market return.
     print("Load the Market Excess return from the 5 Fama French Factors Dataset...")
     # Skip first two rows (text description) and omit yearly data (after row 706).
@@ -452,9 +470,22 @@ def save_performance_statistics(pf_returns: pd.DataFrame,
     # Months no inv.
     months_noinv = (pf_returns==0).sum(axis=0).rename("No Inv.")
     # Collect perfstats "strings" (better for saving/ formatting?).
-    perfstats += [cumr_str, cagr_str, mean_str, mean_signif_series, mean_ann_str, vol_ann_str, sharpe_ann_str, 
-                sharpe_ann_geom_str, months_noinv, maxdd_str, maxdd_days_str, calmar_str, skew_str, 
-                kurt_str, alphas_ann_str, alphas_str, alpha_signif_df, betas_str, beta_signif_df
+    perfstats += [cumr_str, cagr_str, mean_str, mean_signif_series, mean_ann_str, vol_ann_str, 
+                sharpe_ann_str, 
+                sharpe_ann_geom_str, 
+                sortino_adj_ann_str,
+                omega_ann_str,
+                months_noinv, 
+                maxdd_str, 
+                maxdd_days_str, 
+                calmar_str, 
+                skew_str, 
+                kurt_str, 
+                # alphas_ann_str, 
+                alphas_str, 
+                alpha_signif_df, 
+                betas_str, 
+                beta_signif_df
                 ]
     print("Save performance statistics to .csv, .png and .txt...")
     # .csv file.

@@ -402,8 +402,11 @@ def performance(args):
     print("All done!")
 
 
-def reg_vix(args):
-    """Produces the results folder.
+def reg_portfolios(args):
+    """Regress the portfolios in the 'portfolios' subfolder of an experiment id 
+    on several variables. Here defined to be VIX/VVIX and VIX/VVIX/VIX_diff/VVIX_diff. 
+    Only produce Stargazer html and latex in results folder compared to the
+    performance function.
     
     Read the monthly aggregated portfolios from the 'portfolios' subfolder
     within the experiment directory and procude performance statistics in a csv,
@@ -776,8 +779,8 @@ if __name__ == "__main__":
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
     # 2.b) Performance evaluation of portfolios created with 'agg'.
-    parser_perf = subparsers.add_parser("reg_vix")
-    parser_perf.set_defaults(mode=reg_vix)
+    parser_perf = subparsers.add_parser("reg_pfs")
+    parser_perf.set_defaults(mode=reg_portfolios)
     # 2.c) Feature Importance (needs 'agg' to be done first).
     parser_impt = subparsers.add_parser("importance")
     parser_impt.set_defaults(mode=feature_importance)

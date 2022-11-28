@@ -36,7 +36,7 @@ def regress_factors(regression_map: dict, factors_avail: pd.DataFrame, y: pd.Ser
             # Append to dict for stargazer summary.
             collect_group.setdefault(group, {}).setdefault(fileprefix, []).append(ols_result)
 
-            # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4).
+            # 1b. Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4), p.960.
             max_lags = int(len(X)**(1/4))
             ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
             fileprefix = f"HAC_{max_lags}"
@@ -318,3 +318,51 @@ def get_save_alphabeta_significance(pf_returns: pd.DataFrame,
         beta_signif_df.columns = se_names
         beta_signif_df.loc[pf] = se_significances_beta
     return alpha_signif_df, beta_signif_df
+
+
+def regress_df_on_factors(y_df: list, factors_avail: pd.DataFrame, 
+                        path_results: Path, foldername: str) -> None:
+    """Performs each relevant regression from the 'regression_map' dictionary and 
+    saves results as .txt (latex) and .csv files. in an accordingly named folder
+    in 'path_results'. 
+
+        Args:
+            factors:        All independent variables concatenated in a Dataframe.
+            y:              The dependent variable (long short monthly portfolio returns here).
+            path_results:   The path where the results folder resides.
+    
+    """
+    # Add constant for intercept.
+    X = sm.add_constant(factors_avail)
+
+    ls = []
+    for y in y_df.columns:
+        # Regression. With HAC Standard Errors. Lags of Greene (2012): L = T**(1/4), p.960.
+        ols = sm.OLS(y_df[y], X) #long_short_return regressed on X.
+        max_lags = int(len(X)**(1/4))
+        ols_result = ols.fit(cov_type="HAC", cov_kwds={"maxlags": max_lags}, use_t=True)
+        # fileprefix = f"HAC_{max_lags}"
+        # save_ols_results(ols_result, path_results, fileprefix)
+        ls.append(ols_result)
+        
+    # Save results in stargazer format (group regressions side-by-side).
+    stargazer = Stargazer(ls)
+    # Model names.
+    # model_names = sorted(list(regression_map[group].keys()))
+    stargazer.custom_columns(list(y_df.columns), [1]*len(y_df.columns))
+    # Covariate order.
+    # Largest list in 'group' determines covariate order in latex output.
+    # largest_list_group = max(list(regression_map[group].values()), key=lambda ls: len(ls))
+    # cov_order =  largest_list_group + ["const"] #add constant variable.
+    # stargazer.covariate_order(cov_order)
+    # Add cov type in notes.
+    stargazer.add_custom_notes([f"Cov. Type:\tHAC_{max_lags}"])
+    # Dont show degrees of freedom.
+    stargazer.show_degrees_of_freedom(False)
+    # Show t-statistics below coefficients instead of standard errors.
+    stargazer.show_t_statistics(True)
+    # Save as txt and html.
+    with (path_results/f"stargazer_latex_{foldername}.txt").open("w") as text_file:
+        text_file.write(stargazer.render_latex(escape=True))
+    with (path_results/f"stargazer_{foldername}.html").open("w") as text_file:
+        text_file.write(stargazer.render_html())
