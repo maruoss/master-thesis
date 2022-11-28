@@ -5,13 +5,12 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import pdb
 
 from tqdm import tqdm
 from sklearn.metrics import balanced_accuracy_score
 from data.utils.convert_check import small_med_big_eq
 from datamodule import load_data
-from portfolio.helper_ols import regress_factors, regress_on_constant
+from portfolio.helper_ols import regress_df_on_factors, regress_factors, regress_on_constant
 from portfolio.helper_perf import (aggregate_threshold, 
                                     check_eoy, 
                                     collect_preds, 
@@ -44,7 +43,6 @@ def aggregate(args):
     Create aggregated monthly csv files in a new 'portfolios' subfolder within
     the logs/experiment_folder. The aggregation is done by equally weighting
     each option for the respective month."""
-    print("Start aggregation of predictions in each month...")
     # Get experiment folder path 'exp_dir'.
     logs_folder = Path.cwd()/"logs"
     matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
@@ -55,14 +53,19 @@ def aggregate(args):
                             "directory!")
     exp_dir = matches_list[0]
     # Move all predictions to 'predictions' folder with the expdir folder.
-    print("Find all 'predictions{year}' files in the subfolders of the experiment "
-    "and copy to 'predictions' folder...")
-    collect_preds(exp_dir)
-    print("Done.")
-    #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
-    # Read all prediction .csv and save as "all_pred.csv" in exp_dir.
-    print("Read in all prediction .csv files as a dataframe and save as 'all_pred.csv'...")
-    preds_concat_df = concat_and_save_preds(exp_dir) #shape: [index, columns: [id, pred]]
+    if not args.ensemble:
+        print("Start aggregation of predictions in each month...")
+        print("Find all 'predictions{year}' files in the subfolders of the experiment "
+        "and copy to 'predictions' folder...")
+        collect_preds(exp_dir)
+        print("Done.")
+        #TODO: combine (ensemble) of multiple experiment predictions together? list of expids?
+        # Read all prediction .csv and save as "all_pred.csv" in exp_dir.
+        print("Read in all prediction .csv files as a dataframe and save as 'all_pred.csv'...")
+        preds_concat_df = concat_and_save_preds(exp_dir) #shape: [index, columns: [id, pred]]
+    else:
+        print(f"ENSEMBLE option activated: Looking for custom_preds.csv file... in folder {exp_dir}")
+        preds_concat_df = pd.read_csv(exp_dir/"custom_preds.csv", index_col=0)
     print("Done.")
 
     # Get path where datasets reside:
@@ -77,6 +80,14 @@ def aggregate(args):
     #         "equal!")
     # Get small dataset (irrespective of small/medium/big used for train!).
     df_small = pd.read_parquet(path_data/"final_df_call_cao_small.parquet")
+    if args.remove_outlier:
+        cutoff = -10
+        idx_to_drop = df_small[df_small["option_ret"] < cutoff].index
+        diff_obs = len(df_small) - len(preds_concat_df)
+        df_small = df_small.drop(index=idx_to_drop).reset_index(drop=True)
+        idx_to_drop_preds = idx_to_drop - diff_obs
+        print("Preds to drop:", preds_concat_df["pred"].loc[idx_to_drop_preds], sep="\n")
+        preds_concat_df = preds_concat_df.drop(index=idx_to_drop_preds).reset_index(drop=True)
     dates = df_small["date"]
     # Get args from experiment.
     # Alternatively: Load json with json.load() and convert dict/list to df.
@@ -134,6 +145,8 @@ def aggregate(args):
     except FileNotFoundError as err:
         raise FileNotFoundError("Make sure the file 'secid.csv' is in the "
                                 " '/data' subfolder.") from err
+    if args.remove_outlier:
+        secid = secid.drop(idx_to_drop).reset_index(drop=True)
     secid = filter_idx(secid, concat_df) #truncate first X years of training data.
     concat_df = pd.concat([concat_df, secid], axis=1)
     
@@ -179,7 +192,10 @@ def aggregate(args):
     try: # raise error if 'portfolio' folder exists already
         pf_dir.mkdir(exist_ok=True, parents=False) # raise error if parents are missing.
         for class_c, df in agg_dict.items():
-            df.to_csv(pf_dir/f"{class_c}.csv")
+            if args.remove_outlier:
+                df.to_csv(pf_dir/f"{class_c}_rem{cutoff}.csv")
+            else:
+                df.to_csv(pf_dir/f"{class_c}.csv")
     except FileExistsError as err: # from 'exist_ok' -> portfolios folder already exists, do nothing.
         raise FileExistsError("Directory 'portfolios' already exists. Will not "
                                 "touch folder and exit code.") from err
@@ -197,7 +213,10 @@ def aggregate(args):
     # Drop one-hot "weight" columns here.
     cols_to_keep = [col for col in long_short_df.columns.tolist() if "weight" not in col]
     long_short_df = long_short_df[cols_to_keep]
-    long_short_df.to_csv(pf_dir/f"long{longclass}short{shortclass}.csv")
+    if args.remove_outlier:
+        long_short_df.to_csv(pf_dir/f"long{longclass}short{shortclass}_rem{cutoff}.csv")
+    else:
+        long_short_df.to_csv(pf_dir/f"long{longclass}short{shortclass}.csv")
     print("Done.")
     print("All done!")
 
@@ -276,30 +295,32 @@ def performance(args):
     print("Done.")
 
     print("Load the VIX data...")
-    vix_monthly = load_vix_monthly(path_data)
+    vix_monthly = load_vix_monthly(path_data) / 100
     print("Done.")
 
     print("Load the VVIX data...")
-    vvix_monthly = load_vvix_monthly(path_data)
+    vvix_monthly = load_vvix_monthly(path_data) / 100
     print("Done.")
 
-    # Variable of interest (y). We want to explain the monthly long short PF returns.
-    long_short_pf_names = [col for col in pf_returns.columns if col.startswith("long")]
-    if len(long_short_pf_names) != 1: 
+    vix_monthly_diff = vix_monthly.diff().rename("VIX_diff")
+    vvix_monthly_diff = vvix_monthly.squeeze().diff().rename("VVIX_diff")
+
+    pf_to_regress = [col for col in pf_returns.columns]
+    if len(pf_to_regress) != 1: 
         print("More than one long-short portfolio in pf_returns/ portfolio path. "
             "Regressions currently take only one target variable. Will iterate "
             "over them...")
-    for ls_name in long_short_pf_names:
-        long_short_pf_returns = pf_returns[ls_name]
+    for pf in pf_to_regress:
+        long_short_pf_returns = pf_returns[pf]
 
         # Align the months of the following dataframes with the long short dataframe.
-        list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly]
+        list_to_filter = [vix_monthly, vvix_monthly, ff_monthly, mom_monthly, vix_monthly_diff, vvix_monthly_diff]
         list_to_filter = [filter_idx(i, long_short_pf_returns) for i in list_to_filter]
 
         # Unpack list to filter
-        vix_monthly, vvix_monthly, ff_monthly, mom_monthly = list_to_filter
+        vix_monthly, vvix_monthly, ff_monthly, mom_monthly, vix_monthly_diff, vvix_monthly_diff = list_to_filter
         # Concat all independent variables to regress them on the long short portfolio.
-        factors_avail = pd.concat([vix_monthly, vvix_monthly, ff_monthly, mom_monthly], axis=1)
+        factors_avail = pd.concat([vix_monthly, vvix_monthly, ff_monthly, mom_monthly, vix_monthly_diff, vvix_monthly_diff], axis=1)
         # Columns: 'VIX', 'VVIX', 'Mkt-RF', 'SMB', 'HML', 'RMW', 'CMA', 'MOM'.
         
         # Perform several linear regressions with various factors and save results in
@@ -324,13 +345,151 @@ def performance(args):
                         "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
                         "5FF_MOM_VIX":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX"],
                         "5FF_MOM_VIX_VVIX":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX", "VVIX"],
+                        },
+                        "5FF_diff": {  
+                        "5FF":                  ["Mkt-RF", "SMB", "HML", "RMW", "CMA"],
+                        "5FF_MOM":              ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM"],
+                        "5FF_MOM_VIX_diff":          ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX_diff"],
+                        "5FF_MOM_VIX_diff_VVIX_diff":     ["Mkt-RF", "SMB", "HML", "RMW", "CMA", "MOM", "VIX_diff", "VVIX_diff"],
+                        },
+                        "ONLYVIX": {
+                            "VIX" : ["VIX"],
+                            "VVIX": ["VVIX"],
+                            "BOTH": ["VIX", "VVIX"],
+                        },
+                        "ONLYDIFF": {
+                            "VIX_diff" : ["VIX_diff"],
+                            "VVIX_diff": ["VVIX_diff"],
+                            "BOTH": ["VIX_diff", "VVIX_diff"],
+                        },
+                        "VIX_AND_DIFF": {
+                            "ALL": ["VIX", "VVIX", "VIX_diff", "VVIX_diff"],
                         }
         }
         # Regress and save results of the regressions specified in regression_map on 
         # long_short portfolio return.The regression groups get summarized via the stargazer package.
-        regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results/ls_name)
+        regress_factors(regression_map, factors_avail, long_short_pf_returns, path_results/pf)
+
         print("Done.")
-        print("All done!")
+
+
+    # Regress VIX on classes (Reverse variables).
+    vix_map = {"vix_monthly": {"all": ["class0", "class1", "class2", "class3", "class4", "long3short0", "long3short1", "long4short0"],
+                               "classes": ["class0", "class1", "class2", "class3", "class4"],
+                               "long_short": ["long3short0", "long3short1", "long4short0"],
+                               "class0": ["class0"],
+                               "class1": ["class1"],
+                               "class2": ["class2"],
+                               "class3": ["class3"],
+                               "class4": ["class4"],
+                }
+                }
+    vvix_map = {}
+    vvix_map["vvix_monthly"] = vix_map["vix_monthly"]
+    vix_diff_map = {}
+    vix_diff_map["vix_diff_monthly"] = vix_map["vix_monthly"]
+    vvix_diff_map = {}
+    vvix_diff_map["vvix_diff_monthly"] = vix_map["vix_monthly"]
+
+    # Level
+    regress_factors(vix_map, pf_returns, vix_monthly, path_results/"vix")
+    regress_factors(vvix_map, pf_returns, vvix_monthly, path_results/"vvix")
+
+    # Diff
+    regress_factors(vix_diff_map, pf_returns, vix_monthly_diff, path_results/"vix_diff")
+    regress_factors(vvix_diff_map, pf_returns, vvix_monthly_diff, path_results/"vvix_diff")
+
+    print("All done!")
+
+
+def reg_vix(args):
+    """Produces the results folder.
+    
+    Read the monthly aggregated portfolios from the 'portfolios' subfolder
+    within the experiment directory and procude performance statistics in a csv,
+    png and latex file. Also produce a plot with the performance of each portfolio."""
+    print("Starting regressing returns on factors")
+
+    # Get experiment folder path 'exp_dir'.
+    logs_folder = Path.cwd()/"logs"
+    matches = Path(logs_folder).rglob(args.expid) #Get folder in logs_folder that matches expid
+    matches_list = list(matches)
+    if not len(matches_list) == 1:
+        raise ValueError(f"There exists none or more than 1 folder with "
+                            f"experiment id {args.expid} in the {logs_folder.name} "
+                            "directory!")
+    exp_path = matches_list[0]
+
+    # Read aggregated portfolios. RETURNS are from 02/1996 to 11/2021. Because
+    # predictions are made at e.g. 31-10-2021, but the return is from the month 11/2021. 
+    print("Reading aggregated portfolios from 'portfolios' folder...")
+    path_portfolios = exp_path/"portfolios"
+    pf_returns = load_pfret_from_pfs(path_portfolios)
+    print("Done.")
+
+    # Data path.
+    path_data = Path.cwd()/"data"
+
+    print("Load the Monthly Riskfree rate from the 5 Fama French Factors Dataset...")
+    # Skip first two rows (text description) and omit yearly data (after row 706).
+    monthly_rf = load_rf_monthly(path_data) #dataframe
+    # Filter months (rows) to align with pf_returns.
+    monthly_rf = filter_idx(monthly_rf, pf_returns)
+
+    # Excess Returns: Subtract RISKFREE RATE from class portfolio returns to get excess returns.
+    print("Subtract Riskfree rate only from *class* portfolios AND where there was "
+          "made an investment, but *not* from the long short portfolio, as the riskfree "
+          "rate cancels out for the long short portfolio...")
+    class_pf_names = [col for col in pf_returns.columns if col.startswith("class")]
+    # ONLY SUBTRACT RF FROM MONTHS IN CLASS PORTFOLIOS WHERE THERE WAS AN INVESTMENT MADE.
+    for pf in class_pf_names:
+        # Exactly zero return means there was no investment at all (no prediction for that class in that month).
+        zero_inv_mask = (pf_returns[pf] == 0)
+        # Where replaces values where condition is False (where there was investment -> subtract riskfree of the respective month).
+        pf_returns.loc[:, pf] = (pf_returns.loc[:, pf]).where(zero_inv_mask, lambda x: x - monthly_rf.values.squeeze()) #.values needed to broadcast over columns.
+    # Make 'results' subfolder.
+    path_results = exp_path/"results"
+    path_results.mkdir(exist_ok=True, parents=False)
+    
+    print("Load the VIX data...")
+    vix_monthly = load_vix_monthly(path_data) / 100
+    print("Done.")
+
+    print("Load the VVIX data...")
+    vvix_monthly = load_vvix_monthly(path_data) / 100
+    print("Done.")
+
+    vix_monthly_diff = vix_monthly.diff().rename("VIX_diff")
+    vvix_monthly_diff = vvix_monthly.squeeze().diff().rename("VVIX_diff")
+
+    pf_to_regress = list(pf_returns.columns)
+    if len(pf_to_regress) != 1: 
+        print("More than one long-short portfolio in pf_returns/ portfolio path. "
+            "Regressions currently take only one target variable. Will iterate "
+            "over them...")
+
+    example_pf = pf_returns.iloc[:, 0]
+    # Align the months of the following dataframes with the long short dataframe.
+    list_to_filter = [vix_monthly, vvix_monthly, 
+                      vix_monthly_diff, vvix_monthly_diff
+                      ]
+    list_to_filter = [filter_idx(i, example_pf) for i in list_to_filter]
+
+    # Concat all independent variables to regress them on the long short portfolio.
+    factors_avail = pd.concat(list_to_filter, axis=1)
+
+    # Reorder columns
+    order = ["LR", "RF", "GBT", "NN", "TF"]
+    col_order = []
+    for o in order:
+        for c in pf_returns.columns:
+            if o in c:
+                col_order.append(c)
+    pf_returns = pf_returns.reindex(columns=col_order)
+    regress_df_on_factors(pf_returns, factors_avail.iloc[:, :2], path_results=path_results, foldername="vix")
+    regress_df_on_factors(pf_returns, factors_avail, path_results=path_results, foldername="all")
+    
+    print("All done!")
 
 
 def feature_importance(args):
@@ -609,12 +768,17 @@ if __name__ == "__main__":
     parser_agg.add_argument("--shortclass", type=int, default=1)
     parser_agg.add_argument("--min_pred", type=int, default=20,
                             help="The minimum number of predictions in each portfolio")
+    parser_agg.add_argument("--ensemble", action="store_true")
+    parser_agg.add_argument("--remove_outlier", action="store_true")
     # Default at least 10 stock ids per month (min secid).
     # Assuming shortclass is always the 0 prediction PF.
     # 2.a) Performance evaluation of portfolios created with 'agg'.
     parser_perf = subparsers.add_parser("perf")
     parser_perf.set_defaults(mode=performance)
-    # 2.b) Feature Importance (needs 'agg' to be done first).
+    # 2.b) Performance evaluation of portfolios created with 'agg'.
+    parser_perf = subparsers.add_parser("reg_vix")
+    parser_perf.set_defaults(mode=reg_vix)
+    # 2.c) Feature Importance (needs 'agg' to be done first).
     parser_impt = subparsers.add_parser("importance")
     parser_impt.set_defaults(mode=feature_importance)
     parser_impt.add_argument("--longclass", type=int, default=3)

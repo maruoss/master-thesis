@@ -83,14 +83,14 @@ def add_stress_test_param(args):
     # Get args as a dictionary.
     d = vars(args)
     # We want maximum data size. Can edit args via dictionary.
-    d["init_train_length"] = 26 - args.val_length - args.test_length
-    # d["dataset"] = "big" #specify yourself.
+    # d["init_train_length"] = 26 - args.val_length - args.test_length
+    d["dataset"] = "medium" #specify yourself.
     # Depending on which epoch key is avail., change it.
     it_keys = ["max_epochs", "max_iters", "n_estimators", "check_val_every", "num_boost_round"]
     for i in it_keys:
         if i in d.keys():
             d[i] = 1 # change to 1 epoch
-    d["num_samples"] = 1 #to test parallelism.
+    d["num_samples"] = 2 #to test parallelism.
     d["gpus_per_trial"] = 1 #to use full gpu.
 
 
