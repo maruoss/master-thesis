@@ -1,6 +1,6 @@
 # Option Return Classification with Machine Learning
 
-This is the github repo for my master thesis submitted in partial fulfillment of the requirements for the degree of Master of Science in Quantitative Finance at ETH Zurich and University of Zurich.
+This is the github repo for my master thesis submitted for the degree of Master of Science in Quantitative Finance at ETH Zurich and University of Zurich.
 
 ---
 
